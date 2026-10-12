@@ -1,0 +1,12 @@
+{
+  "profile_count": 1000,
+  "sha256": "5c9b32dc9d34891088a9da2e987d17b7413b3d0fab5659ba37cdb1ffc1494413",
+  "output": "data\\profiles.jsonl",
+  "budget": {
+    "requests": 10,
+    "max_requests": 2000,
+    "declared_cost_usd": 0.0,
+    "max_cost_usd": 10.0
+  },
+  "source": "https://data.brreg.no/enhetsregisteret/api/enheter"
+}
