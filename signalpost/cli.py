@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 from . import __version__
@@ -10,6 +11,9 @@ from .identity import InvalidOrganizationNumber
 from .pipeline import build_profile, profiles_from_page
 from .storage import atomic_write_json, write_jsonl
 from .validate import validate_jsonl
+from .competition import run_official_batch
+from .evaluator import validate_envelopes
+from .product import build_html
 
 
 def parser() -> argparse.ArgumentParser:
@@ -31,6 +35,29 @@ def parser() -> argparse.ArgumentParser:
     validate = sub.add_parser("validate", help="Audit a generated JSONL dataset")
     validate.add_argument("path", type=Path, nargs="?", default=Path("data/profiles.jsonl"))
     validate.add_argument("--minimum", type=int, default=1000)
+
+    run = sub.add_parser("run", help="Run the Builderr-supplied organisation batch")
+    run.add_argument("--organisations", type=Path, required=True)
+    run.add_argument("--output", type=Path, required=True)
+    run.add_argument("--report", type=Path, required=True)
+    run.add_argument("--state", type=Path, default=Path("state/signalpost.sqlite3"))
+    run.add_argument("--run-id", required=True)
+    run.add_argument("--workers", type=int, default=8)
+    run.add_argument("--max-requests", type=int, default=2000)
+    run.add_argument("--bulk", type=Path, help="Builderr-supplied frozen BRREG CSV or CSV.GZ identity snapshot")
+
+    audit = sub.add_parser("audit", help="Validate terminal envelopes against an input batch")
+    audit.add_argument("--organisations", type=Path, required=True)
+    audit.add_argument("--output", type=Path, required=True)
+
+    smoke = sub.add_parser("smoke-input", help="Create a local smoke batch from the checked-in profile sample")
+    smoke.add_argument("--profiles", type=Path, default=Path("data/profiles.jsonl"))
+    smoke.add_argument("--count", type=int, default=100)
+    smoke.add_argument("--output", type=Path, default=Path("data/smoke-organisations.jsonl"))
+
+    product = sub.add_parser("product", help="Build a responsive verification interface from envelopes")
+    product.add_argument("--envelopes", type=Path, required=True)
+    product.add_argument("--output", type=Path, default=Path("reports/signalpost.html"))
 
     return root
 
@@ -84,6 +111,37 @@ def main(argv: list[str] | None = None) -> int:
             report = validate_jsonl(args.path, args.minimum)
             print(json.dumps(report, indent=2))
             return 0 if report["valid"] else 2
+        if args.command == "run":
+            report = run_official_batch(args.organisations, args.output, args.report, args.state, args.run_id, args.workers, args.max_requests, args.bulk)
+            print(json.dumps(report, indent=2))
+            return 0 if report["complete"] else 2
+        if args.command == "audit":
+            report = validate_envelopes(args.organisations, args.output)
+            print(json.dumps(report, indent=2))
+            return 0 if report["valid"] else 2
+        if args.command == "smoke-input":
+            if not 1 <= args.count <= 1000:
+                raise ValueError("--count must be between 1 and 1000")
+            orgs = []
+            for line in args.profiles.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    orgs.append(json.loads(line)["organization_number"])
+                if len(orgs) == args.count:
+                    break
+            if len(orgs) != args.count:
+                raise ValueError("profile sample does not contain the requested number of companies")
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", delete=False, dir=args.output.parent, prefix=args.output.name + ".", suffix=".tmp") as handle:
+                temporary = Path(handle.name)
+                for org in orgs:
+                    handle.write(json.dumps({"organisation_number": org}, separators=(",", ":")) + "\n")
+            temporary.replace(args.output)
+            print(json.dumps({"count": len(orgs), "output": str(args.output)}, indent=2))
+            return 0
+        if args.command == "product":
+            build_html(args.envelopes, args.output)
+            print(json.dumps({"output": str(args.output)}, indent=2))
+            return 0
     except (InvalidOrganizationNumber, SourceError, BudgetExceeded, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

@@ -5,4 +5,6 @@ __pycache__/
 *.pyc
 data/cache/
 data/raw/
+out/
+state/
 

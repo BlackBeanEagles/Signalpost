@@ -32,3 +32,7 @@ class CompanyProfile:
     def to_dict(self) -> dict:
         return asdict(self)
 
+
+ALLOWED_AVAILABILITY = {"available", "not_available", "blocked", "not_applicable", "ambiguous", "failed"}
+
+

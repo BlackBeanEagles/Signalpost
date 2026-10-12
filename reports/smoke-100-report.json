@@ -1,0 +1,20 @@
+{
+  "run_id": "smoke-100-refresh-v2",
+  "started_at": "2026-10-12T18:38:53Z",
+  "completed_at": "2026-10-12T18:40:10Z",
+  "input_count": 100,
+  "output_count": 100,
+  "unique_output_count": 100,
+  "available": 100,
+  "failed": 0,
+  "total_claims": 3615,
+  "available_claims": 3457,
+  "evidence_records": 500,
+  "changes": 0,
+  "requests": 500,
+  "third_party_cost_usd": 0.0,
+  "wall_runtime_ms": 76604,
+  "company_runtime_p50_ms": 6232,
+  "company_runtime_p95_ms": 18239,
+  "complete": true
+}

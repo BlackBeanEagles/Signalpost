@@ -1,37 +1,44 @@
-# Submission checklist
+# SignalPost submission
 
-## Ready
+## Deliverables ready
 
-- Working Python 3.10+ agent with no third-party dependencies
-- Exact organisation-number validation and wrong-company rejection
-- Official-source facts with URLs, timestamps, JSON paths, confidence and explanations
-- Deterministic JSON and readable output
-- 1,000 unique company profiles in `data/profiles.jsonl`
-- Dataset manifest with SHA-256 digest and request/cost accounting
-- Validator and automated unit tests
-- One-command Windows runner
-- API/model/cost documentation
+- Contract-compatible batch runner accepting Builderr-supplied companies
+- Exactly one terminal envelope per input, including failures
+- Allowed availability states and explicit missing fields
+- Official identity, financials, roles, groups and workplace coverage
+- Evidence hashes, timestamps, source classes and extraction methods
+- Persistent snapshots, claim history and typed refresh changes
+- Machine-readable 100-company report and audited output
+- Pinned build dependency and zero runtime dependencies
+- $0 third-party API cost
 
-## Before emailing Builderr
+## Evaluator command
 
-1. Confirm the runner input/output contract and adapt `signalpost/cli.py` if they require a particular envelope.
-2. Confirm permitted sources and whether BRREG-only coverage is competitive enough.
-3. Create a public repository and push the frozen commit.
-4. Put the repository URL and exact commit hash below.
-5. Register and share the project link on Unstop.
-6. Email the complete entry to `submit@builderr.ai` before the confirmed deadline.
+```bash
+python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 12
+```
 
-Repository URL: `TO_BE_ADDED_AFTER_REMOTE_REPOSITORY_CREATION`
+## Declared services and licences
 
-Exact commit hash: `TO_BE_ADDED_AFTER_FINAL_COMMIT`
+- Brønnøysundregistrene Enhetsregisteret and Regnskapsregisteret public APIs
+- Norwegian Licence for Open Government Data (NLOD) 2.0
+- No model, paid API, personal credential, external cache or restricted-platform scraper
+- Expected third-party cost per official run: $0
+- Expected request count: up to four live official modules per company when the frozen bulk identity snapshot is supplied. The runner reduces enabled modules automatically to remain within the default 2,000-request limit as the evaluator batch grows.
 
-Run command: `python -m signalpost profile <NORWEGIAN_ORGANISATION_NUMBER> --format json`
+## Smoke result
 
-Batch command: `python -m signalpost batch --count 1000 --output data/profiles.jsonl`
+`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, used 500 official requests, cost $0, and passed the local contract audit.
 
-Model/API: no model; BRREG Enhetsregisteret Open Data REST API; $0 expected external API cost.
+## External actions remaining
 
-## Deadline warning
+Repository URL: `ADD_AFTER_CREATING_THE_PUBLIC_REPOSITORY`
 
-The Unstop page displayed 17 October 2026 at 10:29 PM IST in its structured timeline, while descriptive text said 11:59 PM IST. Confirm the actual cutoff with the organiser and use the earlier time until clarified.
+Exact commit hash: use `git rev-parse HEAD` after the final commit.
+
+Contact details: `ADD_NAME_AND_EMAIL_BEFORE_SUBMISSION`
+
+Send the repository URL, exact commit hash, evaluator command, API/licence declaration, expected cost and contact details to `submit@builderr.ai`. Register the project link on Unstop separately.
+
+Builderr lists the challenge closing date as 21 October 2026 and says revised commit hashes close 18 October 2026. Unstop displayed an earlier 17 October registration deadline. Treat 17 October as the safe submission cutoff unless the organiser confirms otherwise.
 

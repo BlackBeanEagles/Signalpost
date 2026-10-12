@@ -1,83 +1,78 @@
 # SignalPost
 
-An evidence-first agent for Norwegian company research.
+Competition-ready, evidence-first research for Norwegian companies. The evaluator supplies a JSON, JSONL or text batch of organisation numbers; SignalPost returns exactly one terminal JSONL envelope per input.
 
-## What the hackathon asks for
+## Evaluator command
 
-Input: a Norwegian nine-digit organisation number (`organisasjonsnummer`).
+Python 3.10+ is the only runtime requirement. There are no runtime packages or personal credentials.
 
-Output: useful, current company facts where every published fact includes:
+```bash
+python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 12
+```
 
-- the exact organisation number it belongs to;
-- a source URL;
-- the source or retrieval date;
-- a short explanation;
-- enough evidence to verify the claim.
+Audit the result:
 
-The submission must include at least 1,000 company profiles, a repository URL, an exact commit hash, one command to run the agent, model/API details, and expected run costs.
+```bash
+python -m signalpost audit --organisations evaluator-companies.jsonl --output out/envelopes.jsonl
+```
 
-## Scoring and hard limits
+Build the responsive verification interface:
 
-- Coverage: 35 points (minimum 21/35)
-- Correct company matching and evidence: 30 points
-- Correct updates/freshness: 20 points
-- Useful explanations: 10 points
-- Ease of use: 5 points
-- Qualification: at least 65/100 overall plus all published accuracy, evidence, and execution requirements
-- Daily evaluation: 100 random companies, 45 minutes, 2,000 outbound requests, and $10 declared external API cost
-- A material wrong-company publication or fabricated financial value fails the entry
+```bash
+python -m signalpost product --envelopes out/envelopes.jsonl --output out/signalpost.html
+```
 
-## Implemented solution
+## Coverage
 
-1. Validates every organisation number using the Norwegian Modulus 11 rule.
-2. Fetches canonical records from Brønnøysundregistrene (BRREG).
-3. Locks every profile to the returned organisation number and legal name.
-4. Normalizes rich company facts into a consistent evidence-bearing schema.
-5. Rejects wrong-company responses and facts without values.
-6. Generates deterministic JSON or readable summaries.
-7. Produces and validates a 1,000-profile JSONL submission dataset.
-8. Enforces the published 2,000-request and $10 API-cost budgets.
+For every valid organisation number the agent queries five official Norwegian sources:
 
-Start with BRREG only. It is the official source and can provide legal name, organisation form, addresses, industry codes, registration dates, status/register memberships, website/contact fields when present, and roles through the public roles endpoint. Add other sources only after source terms and identity matching are explicit.
+- Enhetsregisteret identity and company details;
+- Regnskapsregisteret financial statements;
+- official registered roles;
+- official corporate-group structure;
+- official registered workplaces/subunits.
 
-Official BRREG API documentation: https://data.brreg.no/enhetsregisteret/api/dokumentasjon/en/index.html
+The frozen bulk registry snapshot is used for identity without consuming outbound requests. The runner automatically chooses the highest-value additional modules that fit the batch size and `--max-requests` budget, so a growing official batch still returns every required envelope.
 
-Hackathon page: https://unstop.com/hackathons/signalpost-build-an-agent-that-finds-company-information-builderrai-1754883
+Claims include legal identity, industry, addresses, employees, contact details, business purpose, filing status, financial results across reporting periods, management and board roles, group relationships, and workplaces. Missing, blocked and failed modules are explicit; missing values are never changed to zero.
 
-## Run
+## Accuracy and evidence
 
-Requires Python 3.10+ and no third-party packages.
+- Norwegian Modulus 11 validation before any request
+- Exact returned organisation-number match before publication
+- Fixed HTTPS allowlist: `data.brreg.no`
+- Immutable SHA-256 source snapshots
+- Retrieval time, extraction method and source class for every evidence record
+- Every available claim resolves to evidence
+- Bounded responses, timeouts, request budget and external cost budget
+- No LLM-generated or inferred facts
 
-```powershell
-# One company
-python -m signalpost profile 923609016 --format json
+## Refresh
 
-# Generate the required dataset
-python -m signalpost batch --count 1000 --output data/profiles.jsonl
+SQLite state stores immutable source snapshots, claim history and current values. Replaying the same data creates no false changes. Added, updated and removed claims carry earlier and current evidence references.
 
-# Audit identity, uniqueness and evidence completeness
-python -m signalpost validate data/profiles.jsonl --minimum 1000
+## Smoke-test result
 
-# Run tests
+The checked-in report and envelopes under `reports/` are a live 100-company run:
+
+- 100 inputs and 100 terminal outputs
+- 0 failed companies
+- 3,457 supported claims
+- 500 evidence snapshots/requests
+- 0 false changes on an immediate repeat
+- $0 third-party API cost
+- 76.6 seconds wall time
+- Responsive search and source-verification interface in `reports/signalpost.html`
+
+Run the tests with:
+
+```bash
 python -m unittest discover -s tests -v
 ```
 
-On Windows, `./run.ps1 profile 923609016`, `./run.ps1 batch`, and `./run.ps1 validate` provide the same workflow.
+## Source rights and operations
 
-## Models, APIs and expected cost
+Only official Brønnøysundregistrene open-data endpoints are enabled. The data is published under the Norwegian Licence for Open Government Data (NLOD) 2.0. No restricted social, job or search platform is scraped. Runtime dependencies are empty; the build backend is pinned.
 
-- Model: none required. This removes hallucination risk from identity matching and fact publication.
-- API: official BRREG Enhetsregisteret Open Data REST API.
-- Authentication: none for the endpoints used.
-- External API cost: $0.
-- A 100-company live run needs 100 requests. The included 1,000-profile dataset was produced from paginated official results in 10 requests.
-- Optional future language-model summaries must operate only on already verified facts and must never change values or publication decisions.
-
-## Included submission data
-
-- `data/profiles.jsonl`: 1,000 unique evidence-bearing profiles.
-- `data/profiles.jsonl.manifest.json`: count, SHA-256 checksum, source and budget use.
-
-See `docs/SUBMISSION.md` for the final checklist and known organiser-dependent items.
-
+The official challenge contract scores 50 recall/coverage, 30 precision/evidence, 12 synthesis and 8 UX. SignalPost prioritizes exact-company official coverage and reproducibility. See `docs/SUBMISSION.md` for the final external submission steps.
 
