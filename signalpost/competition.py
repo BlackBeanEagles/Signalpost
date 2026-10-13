@@ -1,4 +1,5 @@
 import json
+import re
 import statistics
 import tempfile
 import time
@@ -29,7 +30,10 @@ def read_inputs(path: Path) -> list[str]:
             value = row.get("organisation_number", row.get("organization_number", row.get("orgnr")))
         else:
             value = row
-        values.append(str(value or ""))
+        normalized = "".join(re.findall(r"\d", str(value or "")))
+        if len(normalized) != 9:
+            raise ValueError(f"Invalid Norwegian organisation number: {value!r}")
+        values.append(normalized)
     if not values:
         raise ValueError("Input file contains no organisation numbers")
     if len(values) != len(set(values)):
@@ -58,7 +62,6 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     started = now()
     clock = time.perf_counter()
     budget = Budget(max_requests=max_requests, max_cost_usd=10.0)
-    client = HttpClient(budget)
     bulk_records: dict[str, dict[str, Any]] = {}
     bulk_hash = None
     if bulk_path:
@@ -78,7 +81,13 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
             enabled_modules.add(module); remaining -= 1
     indexed: dict[int, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(research_company, value, client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages): index for index, value in enumerate(inputs)}
+        def enrich(value: str) -> dict[str, Any]:
+            company_client = HttpClient(budget)
+            row = research_company(value, company_client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages)
+            row["operations"]["requests"] = company_client.requests
+            return row
+
+        futures = {executor.submit(enrich, value): index for index, value in enumerate(inputs)}
         for future in as_completed(futures):
             index = futures[future]
             try:

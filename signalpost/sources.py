@@ -40,11 +40,16 @@ class HttpClient:
     def __init__(self, budget: Budget, timeout: float = 12.0):
         self.budget = budget
         self.timeout = timeout
+        self.requests = 0
+
+    def _reserve(self) -> None:
+        self.budget.reserve()
+        self.requests += 1
 
     def json(self, url: str) -> Fetch:
         if not url.startswith(BRREG + "/"):
             raise ValueError("Only allowlisted BRREG URLs are accepted by the official connector")
-        self.budget.reserve()
+        self._reserve()
         request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
         stamp = now()
         try:
@@ -63,7 +68,7 @@ class HttpClient:
 
     def text(self, url: str) -> Fetch:
         safe_public_url(url)
-        self.budget.reserve()
+        self._reserve()
         request = urllib.request.Request(url, headers={"Accept": "text/html,application/xhtml+xml,text/plain;q=0.8", "User-Agent": USER_AGENT})
         stamp = now()
         try:

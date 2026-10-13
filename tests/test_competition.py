@@ -20,6 +20,19 @@ class CompetitionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 read_inputs(path)
 
+    def test_normalizes_formatted_organisation_number(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
+            path = Path(directory) / "inputs.jsonl"
+            path.write_text('{"organisation_number":"923 609 016"}\n', encoding="utf-8")
+            self.assertEqual(read_inputs(path), ["923609016"])
+
+    def test_rejects_invalid_organisation_number(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
+            path = Path(directory) / "inputs.txt"
+            path.write_text("123\n", encoding="utf-8")
+            with self.assertRaises(ValueError):
+                read_inputs(path)
+
     def test_reads_frozen_bulk_identity(self):
         records, digest = read_bulk_selected(Path("tests/fixtures/brreg-sample.csv"), {"923609016"})
         self.assertEqual(records["923609016"]["navn"], "EQUINOR ASA")

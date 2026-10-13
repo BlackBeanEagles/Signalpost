@@ -29,7 +29,7 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 
 ## Smoke result
 
-`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, used 500 official requests, cost $0, and passed the local contract audit.
+`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, used 439 requests, cost $0, and passed the local contract audit.
 
 ## External actions remaining
 

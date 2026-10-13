@@ -1,6 +1,7 @@
 import html
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def build_html(envelopes_path: Path, output_path: Path) -> None:
@@ -24,8 +25,10 @@ def build_html(envelopes_path: Path, output_path: Path) -> None:
                 evidence = evidence_by_id.get(evidence_id, {})
                 url = html.escape(str(evidence.get("source_url", "")), quote=True)
                 retrieved = html.escape(str(evidence.get("retrieved_at", "")))
-                if url.startswith("https://data.brreg.no/"):
-                    links.append(f'<a href="{url}" target="_blank" rel="noopener">source · {retrieved[:10]}</a>')
+                parsed = urlparse(str(evidence.get("source_url", "")))
+                if parsed.scheme in {"http", "https"} and parsed.hostname:
+                    source_class = html.escape(str(evidence.get("source_class") or "source").replace("_", " "))
+                    links.append(f'<a href="{url}" target="_blank" rel="noopener noreferrer">{source_class} · {retrieved[:10]}</a>')
             claim_rows.append(f'<tr><th>{html.escape(str(claim.get("field")))}</th><td>{html.escape(value)}</td><td>{" ".join(links)}</td></tr>')
         changes = row.get("changes") or []
         change_html = "" if not changes else f'<p class="changes">{len(changes)} verified change(s) since the previous run</p>'

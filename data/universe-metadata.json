@@ -1,0 +1,21 @@
+{
+  "name": "signalpost-company-universe-2025.jsonl.gz",
+  "bytes": 12631607,
+  "sha256": "1c89710e5b01f8617e86d09fbdff4a52f2f8dbbba297e74f7164b5984f5a0384",
+  "rows": 411160,
+  "schema": [
+    "organisation_number",
+    "name",
+    "legal_form",
+    "employees",
+    "bankrupt",
+    "liquidating",
+    "municipality",
+    "municipality_number",
+    "industry_code",
+    "industry_label",
+    "website",
+    "latest_submitted_accounts"
+  ],
+  "source": "Builderr SignalPost public universe"
+}
