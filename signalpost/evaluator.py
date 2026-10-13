@@ -51,8 +51,18 @@ def validate_envelopes(input_path: Path, output_path: Path) -> dict[str, Any]:
                     errors.append(f"line {index + 1}: dangling evidence {evidence_id}")
                     continue
                 url = urllib.parse.urlparse(str(item.get("source_url", "")))
-                if url.scheme != "https" or url.hostname != "data.brreg.no":
-                    errors.append(f"line {index + 1}: non-allowlisted evidence URL")
+                source_class = item.get("source_class")
+                if source_class == "official_norwegian_register":
+                    if url.scheme != "https" or url.hostname != "data.brreg.no":
+                        errors.append(f"line {index + 1}: invalid official evidence URL")
+                elif source_class == "company_owned":
+                    if url.scheme not in {"http", "https"} or not url.hostname:
+                        errors.append(f"line {index + 1}: invalid company-owned evidence URL")
+                elif source_class == "official_support_registry":
+                    if url.scheme != "https" or url.hostname != "stotte.brreg.no":
+                        errors.append(f"line {index + 1}: invalid support-registry evidence URL")
+                else:
+                    errors.append(f"line {index + 1}: undeclared evidence source class")
                 if not item.get("content_sha256") or len(item["content_sha256"]) != 64:
                     errors.append(f"line {index + 1}: invalid evidence hash")
         legal_names = [c for c in claims if isinstance(c, dict) and c.get("field") == "company.legal_name" and c.get("availability") == "available"]

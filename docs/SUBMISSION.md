@@ -5,7 +5,8 @@
 - Contract-compatible batch runner accepting Builderr-supplied companies
 - Exactly one terminal envelope per input, including failures
 - Allowed availability states and explicit missing fields
-- Official identity, financials, roles, groups and workplace coverage
+- Official identity, financials, roles, groups, workplaces and public-support awards
+- Strictly verified company-owned descriptions, contact channels, careers/jobs, social links and activity pages
 - Evidence hashes, timestamps, source classes and extraction methods
 - Persistent snapshots, claim history and typed refresh changes
 - Machine-readable 100-company report and audited output
@@ -24,7 +25,7 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 - Norwegian Licence for Open Government Data (NLOD) 2.0
 - No model, paid API, personal credential, external cache or restricted-platform scraper
 - Expected third-party cost per official run: $0
-- Expected request count: up to four live official modules per company when the frozen bulk identity snapshot is supplied. The runner reduces enabled modules automatically to remain within the default 2,000-request limit as the evaluator batch grows.
+- Expected request count: one shared support snapshot plus budget-adaptive official/company-owned modules. The runner reduces enabled modules automatically to remain within the default 2,000-request limit as the evaluator batch grows.
 
 ## Smoke result
 

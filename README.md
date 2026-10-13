@@ -31,6 +31,7 @@ For every valid organisation number the agent queries five official Norwegian so
 - official registered roles;
 - official corporate-group structure;
 - official registered workplaces/subunits.
+- the shared official Støtteregisteret award snapshot when it completes within its bounded transfer deadline.
 
 The frozen bulk registry snapshot is used for identity without consuming outbound requests. The runner automatically chooses the highest-value additional modules that fit the batch size and `--max-requests` budget, so a growing official batch still returns every required envelope.
 
@@ -57,11 +58,11 @@ The checked-in report and envelopes under `reports/` are a live 100-company run:
 
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
-- 3,457 supported claims
-- 500 evidence snapshots/requests
+- 3,549 supported claims, including 104 strictly verified company-site claims
+- 427 evidence records from 439 requests
 - 0 false changes on an immediate repeat
 - $0 third-party API cost
-- 76.6 seconds wall time
+- 55.4 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
 Run the tests with:

@@ -11,6 +11,7 @@ from .budget import Budget
 from .sources import HttpClient, now
 from .state import StateStore
 from .bulk import read_bulk_selected
+from .support import attach_support, fetch_support_awards
 
 
 def read_inputs(path: Path) -> list[str]:
@@ -62,13 +63,22 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     bulk_hash = None
     if bulk_path:
         bulk_records, bulk_hash = read_bulk_selected(bulk_path, set(inputs))
-    requests_per_company = max_requests // len(inputs)
-    priority = ["financials", "roles", "locations", "group"]
-    module_slots = requests_per_company if bulk_path else max(0, requests_per_company - 1)
-    enabled_modules = {"registry", *priority[:module_slots]}
+    support_awards, support_report = fetch_support_awards(set(inputs), budget, state_path.parent)
+    requests_per_company = max(0, max_requests - 1) // len(inputs)
+    remaining = requests_per_company if bulk_path else max(0, requests_per_company - 1)
+    enabled_modules = {"registry"}
+    for module in ("financials", "roles"):
+        if remaining:
+            enabled_modules.add(module); remaining -= 1
+    website_pages = min(5, remaining)
+    if website_pages:
+        enabled_modules.add("website"); remaining -= website_pages
+    for module in ("locations", "group"):
+        if remaining:
+            enabled_modules.add(module); remaining -= 1
     indexed: dict[int, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(research_company, value, client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules): index for index, value in enumerate(inputs)}
+        futures = {executor.submit(research_company, value, client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages): index for index, value in enumerate(inputs)}
         for future in as_completed(futures):
             index = futures[future]
             try:
@@ -83,6 +93,8 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
                     "operations": {"requests": 0, "runtime_ms": 0, "third_party_cost_usd": 0.0},
                 }
     rows = [indexed[index] for index in range(len(inputs))]
+    for row in rows:
+        attach_support(row, support_awards.get(row["organisation_number"], []), support_report)
     store = StateStore(state_path)
     try:
         for row in rows:
@@ -114,6 +126,8 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
         "complete": len(rows) == len(inputs),
         "bulk_registry_snapshot": str(bulk_path) if bulk_path else None,
         "enabled_modules": sorted(enabled_modules),
+        "website_page_budget_per_company": website_pages,
+        "support_registry": support_report,
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
