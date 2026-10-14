@@ -58,11 +58,11 @@ The checked-in report and envelopes under `reports/` are a live 100-company run:
 
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
-- 3,577 supported claims, including 131 strictly verified company-site claims
-- 523 evidence records from 552 requests
+- 3,669 supported claims, including 223 strictly verified company-site claims across 13 companies
+- 538 evidence records from 625 requests
 - 0 false changes on an immediate repeat
 - $0 third-party API cost
-- 87.2 seconds wall time
+- 94.6 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
 Run the tests with:
@@ -71,7 +71,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 19 deterministic tests.
+The current suite contains 20 deterministic tests.
 
 ## Source rights and operations
 

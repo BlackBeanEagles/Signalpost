@@ -73,7 +73,7 @@ def plan_modules(company_count: int, max_requests: int, bulk_identity: bool) -> 
     return enabled_modules, website_pages
 
 
-def run_official_batch(input_path: Path, output_path: Path, report_path: Path, state_path: Path, run_id: str, workers: int = 8, max_requests: int = 15000, bulk_path: Path | None = None) -> dict[str, Any]:
+def run_official_batch(input_path: Path, output_path: Path, report_path: Path, state_path: Path, run_id: str, workers: int = 8, max_requests: int = 17000, bulk_path: Path | None = None) -> dict[str, Any]:
     inputs = read_inputs(input_path)
     if not 1 <= workers <= 32:
         raise ValueError("workers must be between 1 and 32")

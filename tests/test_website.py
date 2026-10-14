@@ -2,7 +2,7 @@ import unittest
 
 from signalpost.sources import safe_public_url
 from signalpost.sources import Fetch
-from signalpost.website import PageParser, _structured_claims, _verified
+from signalpost.website import PageParser, _candidate_homepages, _structured_claims, _verified
 
 
 class WebsiteTests(unittest.TestCase):
@@ -22,6 +22,10 @@ class WebsiteTests(unittest.TestCase):
         claims = _structured_claims(fetch, "ev-1")
         fields = {claim["field"] for claim in claims}
         self.assertTrue({"contact.phone", "contact.email", "locations.company_reported", "public.activity_item", "hiring.job_posting"} <= fields)
+
+    def test_missing_registry_site_gets_one_deterministic_discovery_candidate(self):
+        self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no"])
+        self.assertEqual(_candidate_homepages({"navn": "Example AS", "hjemmeside": "example.no"}), ["https://example.no"])
 
     def test_exact_org_number_verifies_identity(self):
         ok, _ = _verified("EQUINOR ASA org.nr. 923 609 016", "923609016", {"navn": "EQUINOR ASA"})

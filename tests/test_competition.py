@@ -40,7 +40,7 @@ class CompetitionTests(unittest.TestCase):
         self.assertEqual(len(digest), 64)
 
     def test_current_official_scale_keeps_high_value_modules(self):
-        modules, pages = plan_modules(1500, 15000, True)
+        modules, pages = plan_modules(1500, 17000, True)
         self.assertEqual(modules, {"registry", "financials", "roles", "website", "locations", "group"})
         self.assertEqual(pages, 5)
 

@@ -64,6 +64,17 @@ def _tokens(value: Any) -> list[str]:
     return [token for token in re.findall(r"[a-z0-9]+", ascii_text) if token not in ignored and len(token) >= 2]
 
 
+def _candidate_homepages(registry: dict[str, Any]) -> list[str]:
+    supplied = str(registry.get("hjemmeside") or "").strip()
+    if supplied:
+        return [supplied if "://" in supplied else "https://" + supplied]
+    tokens = _tokens(registry.get("navn"))
+    compact = "".join(tokens)
+    # A guessed hostname is discovery only. The page must still pass _verified before
+    # a single claim is published. One candidate keeps large official runs bounded.
+    return [f"https://{compact}.no"] if 3 <= len(compact) <= 63 else []
+
+
 def _verified(text: str, orgnr: str, registry: dict[str, Any]) -> tuple[bool, str]:
     compact = _digits(text)
     if orgnr in compact:
@@ -153,17 +164,23 @@ def _structured_claims(fetch: Fetch, evidence_id: str) -> list[dict[str, Any]]:
 
 def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpClient, max_pages: int = 5) -> WebsiteResult:
     result = WebsiteResult()
-    supplied = str(registry.get("hjemmeside") or "").strip()
-    if not supplied:
+    home_candidates = _candidate_homepages(registry)
+    if not home_candidates:
         return result
-    home = supplied if "://" in supplied else "https://" + supplied
-    try:
-        first = client.text(home)
-    except Exception as exc:
-        result.errors.append({"module": "website", "message": type(exc).__name__})
-        return result
-    if first.status != 200 or not isinstance(first.body, str):
-        result.errors.append({"module": "website", "message": first.error or f"HTTP {first.status}"})
+    first = None
+    last_error = None
+    for home in home_candidates:
+        try:
+            candidate = client.text(home)
+        except Exception as exc:
+            last_error = type(exc).__name__
+            continue
+        if candidate.status == 200 and isinstance(candidate.body, str):
+            first = candidate
+            break
+        last_error = candidate.error or f"HTTP {candidate.status}"
+    if first is None:
+        result.errors.append({"module": "website", "message": last_error or "No candidate website responded"})
         return result
     base_host = (urllib.parse.urlparse(first.url).hostname or "").casefold().removeprefix("www.")
     parser = PageParser(); parser.feed(first.body)
