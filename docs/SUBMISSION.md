@@ -25,11 +25,11 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 - Norwegian Licence for Open Government Data (NLOD) 2.0
 - No model, paid API, personal credential, external cache or restricted-platform scraper
 - Expected third-party cost per official run: $0
-- Expected request count: one shared support snapshot plus budget-adaptive official/company-owned modules. The default 17,000-request ceiling is sized to retain the high-value role, location, group and verified-website modules plus one bounded exact-identity website discovery candidate on the current 1,500-company official batch; `--max-requests` can be lowered to match an evaluator-supplied ceiling.
+- Expected request count: one shared support snapshot plus budget-adaptive official/company-owned modules. The default 17,000-request ceiling is sized to retain the high-value role, location, group and verified-website modules plus up to two bounded exact-identity website discovery candidates on the current 1,500-company official batch; `--max-requests` can be lowered to match an evaluator-supplied ceiling.
 
 ## Smoke result
 
-`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, emitted 3,669 supported claims including 223 verified company-site claims across 13 companies, used 625 requests, cost $0, and passed the local contract audit.
+`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, emitted 3,669 supported claims including 223 verified company-site claims across 13 companies, used 632 requests, cost $0, and passed the local contract audit.
 
 ## External actions remaining
 

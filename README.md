@@ -59,10 +59,10 @@ The checked-in report and envelopes under `reports/` are a live 100-company run:
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
 - 3,669 supported claims, including 223 strictly verified company-site claims across 13 companies
-- 538 evidence records from 625 requests
+- 538 evidence records from 632 requests
 - 0 false changes on an immediate repeat
 - $0 third-party API cost
-- 94.6 seconds wall time
+- 88.4 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
 Run the tests with:

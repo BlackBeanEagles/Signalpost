@@ -70,9 +70,15 @@ def _candidate_homepages(registry: dict[str, Any]) -> list[str]:
         return [supplied if "://" in supplied else "https://" + supplied]
     tokens = _tokens(registry.get("navn"))
     compact = "".join(tokens)
+    hyphenated = "-".join(tokens)
     # A guessed hostname is discovery only. The page must still pass _verified before
     # a single claim is published. One candidate keeps large official runs bounded.
-    return [f"https://{compact}.no"] if 3 <= len(compact) <= 63 else []
+    if not 3 <= len(compact) <= 63:
+        return []
+    candidates = [f"https://{compact}.no"]
+    if hyphenated != compact and len(hyphenated) <= 63:
+        candidates.append(f"https://{hyphenated}.no")
+    return candidates
 
 
 def _verified(text: str, orgnr: str, registry: dict[str, Any]) -> tuple[bool, str]:

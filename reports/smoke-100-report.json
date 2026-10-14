@@ -1,7 +1,7 @@
 {
-  "run_id": "smoke-100-recall-v6",
-  "started_at": "2026-10-14T18:53:34Z",
-  "completed_at": "2026-10-14T18:55:09Z",
+  "run_id": "smoke-100-recall-v7",
+  "started_at": "2026-10-14T18:56:17Z",
+  "completed_at": "2026-10-14T18:57:45Z",
   "input_count": 100,
   "output_count": 100,
   "unique_output_count": 100,
@@ -11,11 +11,11 @@
   "available_claims": 3669,
   "evidence_records": 538,
   "changes": 0,
-  "requests": 625,
+  "requests": 632,
   "third_party_cost_usd": 0.0,
-  "wall_runtime_ms": 94562,
-  "company_runtime_p50_ms": 7971,
-  "company_runtime_p95_ms": 20652,
+  "wall_runtime_ms": 88375,
+  "company_runtime_p50_ms": 8084,
+  "company_runtime_p95_ms": 20832,
   "complete": true,
   "bulk_registry_snapshot": null,
   "enabled_modules": [
@@ -30,10 +30,10 @@
   "support_registry": {
     "status": "failed",
     "source_url": "https://stotte.brreg.no/nb/oppslag/stoettetildeling/totalbestand/csv",
-    "retrieved_at": "2026-10-14T18:53:34Z",
-    "snapshot_sha256": "44b4aea4564a0de520c97f6619132a7150ba846f971848139e99f4ddb5304b18",
-    "bytes": 8388608,
+    "retrieved_at": "2026-10-14T18:56:17Z",
+    "snapshot_sha256": "3bbb6254eab6cfc7f036c8f42deffd7c39ae1f8852474c7e4f3a5c5ac8f6b9f5",
+    "bytes": 15728640,
     "error": "TimeoutError: support registry exceeded total transfer deadline",
-    "runtime_ms": 30139
+    "runtime_ms": 30077
   }
 }

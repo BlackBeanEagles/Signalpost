@@ -24,7 +24,7 @@ class WebsiteTests(unittest.TestCase):
         self.assertTrue({"contact.phone", "contact.email", "locations.company_reported", "public.activity_item", "hiring.job_posting"} <= fields)
 
     def test_missing_registry_site_gets_one_deterministic_discovery_candidate(self):
-        self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no"])
+        self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no", "https://norsk-eksempel.no"])
         self.assertEqual(_candidate_homepages({"navn": "Example AS", "hjemmeside": "example.no"}), ["https://example.no"])
 
     def test_exact_org_number_verifies_identity(self):
