@@ -1,5 +1,6 @@
 import hashlib
 import html.parser
+import json
 import re
 import urllib.parse
 import unicodedata
@@ -11,6 +12,7 @@ from .sources import Fetch, HttpClient
 
 KEYWORDS = ("contact", "kontakt", "about", "om-oss", "careers", "karriere", "jobb", "jobs", "news", "aktuelt", "nyheter")
 SOCIAL_HOSTS = {"linkedin.com", "www.linkedin.com", "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com", "youtube.com", "www.youtube.com"}
+COMMON_PATHS = ("/kontakt", "/contact", "/om-oss", "/about", "/karriere", "/careers", "/jobb", "/jobs", "/aktuelt", "/nyheter", "/news")
 
 
 class PageParser(html.parser.HTMLParser):
@@ -87,6 +89,68 @@ def _ev(fetch: Fetch, proof: str) -> dict[str, Any]:
     return {"id": f"ev-website-{fetch.sha256[:16]}", "source_url": fetch.url, "source_class": "company_owned", "retrieved_at": fetch.retrieved_at, "content_sha256": fetch.sha256, "claim_span": proof, "extraction_method": "signalpost.company_site.v1"}
 
 
+def _jsonld_nodes(document: str) -> list[dict[str, Any]]:
+    nodes: list[dict[str, Any]] = []
+    pattern = re.compile(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', re.I | re.S)
+
+    def walk(value: Any) -> None:
+        if isinstance(value, dict):
+            nodes.append(value)
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    for match in pattern.finditer(document):
+        try:
+            walk(json.loads(match.group(1).strip()))
+        except (json.JSONDecodeError, TypeError):
+            continue
+    return nodes
+
+
+def _structured_claims(fetch: Fetch, evidence_id: str) -> list[dict[str, Any]]:
+    claims: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(field: str, value: Any, confidence: float = 0.97) -> None:
+        identity = json.dumps(value, ensure_ascii=False, sort_keys=True) if not isinstance(value, str) else value
+        marker = (field, identity)
+        if not value or marker in seen:
+            return
+        seen.add(marker)
+        claims.append({"key": f"{field}:{hashlib.sha256(identity.encode()).hexdigest()[:12]}", "field": field, "value": value, "availability": "available", "confidence": confidence, "evidence_ids": [evidence_id]})
+
+    for node in _jsonld_nodes(str(fetch.body or "")):
+        raw_type = node.get("@type")
+        kinds = {str(item) for item in (raw_type if isinstance(raw_type, list) else [raw_type]) if item}
+        if kinds & {"Organization", "Corporation", "LocalBusiness", "Store", "ProfessionalService"}:
+            add("contact.phone", node.get("telephone"))
+            add("contact.email", str(node.get("email") or "").removeprefix("mailto:"))
+            address = node.get("address")
+            if isinstance(address, dict) and any(address.get(key) for key in ("streetAddress", "postalCode", "addressLocality")):
+                add("locations.company_reported", {key: address.get(key) for key in ("streetAddress", "postalCode", "addressLocality", "addressCountry") if address.get(key)})
+            same_as = node.get("sameAs")
+            for url in same_as if isinstance(same_as, list) else [same_as]:
+                parsed = urllib.parse.urlparse(str(url or ""))
+                if (parsed.hostname or "").casefold() in SOCIAL_HOSTS:
+                    add("public.social_profile", str(url))
+        if kinds & {"NewsArticle", "Article", "BlogPosting", "PressRelease"}:
+            headline = node.get("headline") or node.get("name")
+            url = node.get("url") or node.get("mainEntityOfPage")
+            if isinstance(url, dict):
+                url = url.get("@id")
+            if headline and url:
+                add("public.activity_item", {"title": str(headline)[:300], "url": urllib.parse.urljoin(fetch.url, str(url)), "published_at": node.get("datePublished")})
+        if "JobPosting" in kinds:
+            title = node.get("title") or node.get("name")
+            url = node.get("url") or fetch.url
+            if title:
+                add("hiring.job_posting", {"title": str(title)[:200], "url": urllib.parse.urljoin(fetch.url, str(url)), "published_at": node.get("datePosted"), "valid_through": node.get("validThrough")})
+    return claims
+
+
 def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpClient, max_pages: int = 5) -> WebsiteResult:
     result = WebsiteResult()
     supplied = str(registry.get("hjemmeside") or "").strip()
@@ -112,6 +176,15 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             clean = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
             if clean not in candidates:
                 candidates.append(clean)
+    # Many small-company sites omit useful navigation from the homepage or render it with
+    # JavaScript. Probe a bounded set of conventional same-origin paths; publication still
+    # requires the exact-entity gate below and a successful page response.
+    for path in COMMON_PATHS:
+        if len(candidates) >= max(0, max_pages - 1):
+            break
+        guessed = urllib.parse.urljoin(first.url, path)
+        if guessed not in candidates:
+            candidates.append(guessed)
     def priority(url: str) -> int:
         value = urllib.parse.urlparse(url).path.casefold()
         groups = (("career", "karriere", "jobb", "jobs"), ("news", "aktuelt", "nyheter"), ("contact", "kontakt"), ("about", "om-oss"))
@@ -135,10 +208,31 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     seen = set()
     for fetch, page in pages:
         ev = evidence_by_url[fetch.url]; path = urllib.parse.urlparse(fetch.url).path.casefold()
+        result.claims.extend(_structured_claims(fetch, ev["id"]))
         if any(word in path for word in ("career", "karriere", "jobb", "jobs")):
             result.claims.append({"key": f"hiring.careers_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "hiring.careers_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("news", "aktuelt", "nyheter")):
             result.claims.append({"key": f"public.activity_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "public.activity_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})
+            activity_count = 0
+            for href, label in page.links:
+                absolute = urllib.parse.urljoin(fetch.url, href)
+                parsed = urllib.parse.urlparse(absolute)
+                title = " ".join(label.split())
+                rejected = ("kategori", "category", "tag", "author", "personvern", "privacy", "kontakt", "contact", "cookie")
+                same_host = (parsed.hostname or "").casefold().removeprefix("www.") == base_host
+                if not same_host or absolute.rstrip("/") == fetch.url.rstrip("/") or any(word in parsed.path.casefold() for word in rejected):
+                    continue
+                if not (8 <= len(title) <= 240) or parsed.path in {"", "/"}:
+                    continue
+                value = {"title": title, "url": urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))}
+                identity = value["url"]
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                result.claims.append({"key": f"public.activity_item:{hashlib.sha256(identity.encode()).hexdigest()[:12]}", "field": "public.activity_item", "value": value, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
+                activity_count += 1
+                if activity_count >= 20:
+                    break
         for href, _label in page.links:
             absolute = urllib.parse.urljoin(fetch.url, href); parsed = urllib.parse.urlparse(absolute)
             field = value = None
@@ -151,5 +245,9 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
                 identity = value if isinstance(value, str) else value["url"]
                 if identity not in seen:
                     seen.add(identity); result.claims.append({"key": f"{field}:{hashlib.sha256(identity.encode()).hexdigest()[:12]}", "field": field, "value": value, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
+    deduplicated: dict[str, dict[str, Any]] = {}
+    for claim in result.claims:
+        deduplicated.setdefault(str(claim.get("key")), claim)
+    result.claims = list(deduplicated.values())
     return result
 

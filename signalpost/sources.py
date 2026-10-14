@@ -5,6 +5,7 @@ import ipaddress
 import urllib.error
 import urllib.parse
 import urllib.request
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -46,25 +47,32 @@ class HttpClient:
         self.budget.reserve()
         self.requests += 1
 
-    def json(self, url: str) -> Fetch:
+    def json(self, url: str, retries: int = 2) -> Fetch:
         if not url.startswith(BRREG + "/"):
             raise ValueError("Only allowlisted BRREG URLs are accepted by the official connector")
-        self._reserve()
-        request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
-        stamp = now()
-        try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                length = int(response.headers.get("Content-Length") or 0)
-                if length > MAX_JSON_BYTES:
-                    return Fetch(url, 413, None, b"", stamp, "response exceeds safety limit")
-                raw = response.read(MAX_JSON_BYTES + 1)
-                if len(raw) > MAX_JSON_BYTES:
-                    return Fetch(url, 413, None, b"", stamp, "response exceeds safety limit")
-                return Fetch(response.geturl(), response.status, json.loads(raw.decode("utf-8")), raw, stamp)
-        except urllib.error.HTTPError as exc:
-            return Fetch(url, exc.code, None, b"", stamp, f"HTTP {exc.code}")
-        except (urllib.error.URLError, socket.timeout, TimeoutError, json.JSONDecodeError) as exc:
-            return Fetch(url, 0, None, b"", stamp, type(exc).__name__)
+        last = Fetch(url, 0, None, b"", now(), "not attempted")
+        for attempt in range(retries + 1):
+            self._reserve()
+            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
+            stamp = now()
+            try:
+                with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                    length = int(response.headers.get("Content-Length") or 0)
+                    if length > MAX_JSON_BYTES:
+                        return Fetch(url, 413, None, b"", stamp, "response exceeds safety limit")
+                    raw = response.read(MAX_JSON_BYTES + 1)
+                    if len(raw) > MAX_JSON_BYTES:
+                        return Fetch(url, 413, None, b"", stamp, "response exceeds safety limit")
+                    return Fetch(response.geturl(), response.status, json.loads(raw.decode("utf-8")), raw, stamp)
+            except urllib.error.HTTPError as exc:
+                last = Fetch(url, exc.code, None, b"", stamp, f"HTTP {exc.code}")
+                if exc.code not in {429, 500, 502, 503, 504}:
+                    return last
+            except (urllib.error.URLError, socket.timeout, TimeoutError, json.JSONDecodeError) as exc:
+                last = Fetch(url, 0, None, b"", stamp, type(exc).__name__)
+            if attempt < retries:
+                time.sleep(0.2 * (2 ** attempt))
+        return last
 
     def text(self, url: str) -> Fetch:
         safe_public_url(url)

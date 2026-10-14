@@ -125,6 +125,80 @@ def _group_claims(body: Any, evidence_id: str) -> list[dict[str, Any]]:
     return [_claim("company.group_structure", body, evidence_id)]
 
 
+def build_synthesis(orgnr: str, claims: list[dict[str, Any]], changes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Build useful prose only from published claims and retain its evidence boundary."""
+    available = [item for item in claims if item.get("availability") == "available"]
+    by_field: dict[str, list[dict[str, Any]]] = {}
+    for item in available:
+        by_field.setdefault(str(item.get("field")), []).append(item)
+
+    def first(field: str, default: Any = None) -> Any:
+        rows = by_field.get(field) or []
+        return rows[0].get("value") if rows else default
+
+    name = str(first("company.legal_name", orgnr))
+    form = first("company.legal_form")
+    industry = first("company.industry_primary") or {}
+    address = first("company.business_address") or {}
+    employees = first("company.employees")
+    description = first("website.description")
+    parts = [name]
+    if form:
+        parts.append(f"is registered as {form}")
+    if isinstance(industry, dict) and industry.get("beskrivelse"):
+        parts.append(f"in {industry['beskrivelse']}")
+    municipality = address.get("kommune") if isinstance(address, dict) else None
+    if municipality:
+        parts.append(f"with a registered address in {municipality}")
+    overview = " ".join(parts) + "."
+    if employees is not None:
+        overview += f" The register reports {employees} employee{'s' if employees != 1 else ''}."
+    if description:
+        overview += f" Its verified website describes the business as: {str(description).strip()}"
+
+    financial_rows = sorted(
+        by_field.get("financial.revenue", []),
+        key=lambda item: str(item.get("reporting_period") or ""),
+        reverse=True,
+    )
+    financial_summary = "No annual-account revenue was available in this run."
+    if financial_rows:
+        latest = financial_rows[0]
+        period = latest.get("reporting_period") or "latest reported period"
+        result_rows = [row for row in by_field.get("financial.annual_result", []) if row.get("reporting_period") == latest.get("reporting_period")]
+        result_text = f" and annual result {result_rows[0]['value']:,.0f} NOK" if result_rows and isinstance(result_rows[0].get("value"), (int, float)) else ""
+        revenue = latest.get("value")
+        financial_summary = f"For {period}, reported revenue was {revenue:,.0f} NOK{result_text}." if isinstance(revenue, (int, float)) else f"Revenue for {period} was {revenue}."
+
+    roles = by_field.get("people.official_role", [])
+    locations = by_field.get("locations.registered_workplace", [])
+    jobs = by_field.get("hiring.job_posting", [])
+    activity = by_field.get("public.activity_item", []) or by_field.get("public.activity_page", [])
+    public_summary = f"The profile contains {len(roles)} active registered role record(s), {len(locations)} registered workplace(s), {len(jobs)} current job posting(s), and {len(activity)} public activity signal(s)."
+
+    unknowns = sorted({str(item.get("field")) for item in claims if item.get("availability") != "available"})
+    if changes:
+        labels = ", ".join(str(item.get("claim_key") or item.get("field") or "profile fact") for item in changes[:5])
+        change_summary = f"This refresh found {len(changes)} supported change(s): {labels}."
+    else:
+        change_summary = "No supported material change was detected against the stored profile."
+    unknown_summary = "No unresolved claim families remain." if not unknowns else "Not found, blocked, or unresolved in this run: " + ", ".join(unknowns) + "."
+    evidence_ids = sorted({evidence_id for item in available for evidence_id in (item.get("evidence_ids") or [])})
+    return {
+        "headline": name,
+        "supported_fact_count": len(available),
+        "changed_fact_count": len(changes),
+        "unknown_families": unknowns,
+        "overview": overview,
+        "financial_summary": financial_summary,
+        "public_footprint_summary": public_summary,
+        "change_summary": change_summary,
+        "unknown_summary": unknown_summary,
+        "evidence_ids": evidence_ids,
+        "explanation": " ".join((overview, financial_summary, public_summary, change_summary, unknown_summary)),
+    }
+
+
 def research_company(org_value: str, client: HttpClient, budget: Budget, store: StateStore | None, run_id: str, registry_payload: dict[str, Any] | None = None, registry_bulk_hash: str | None = None, modules: set[str] | None = None, website_pages: int = 0) -> dict[str, Any]:
     started = now()
     clock = time.perf_counter()
@@ -190,14 +264,7 @@ def research_company(org_value: str, client: HttpClient, budget: Budget, store: 
 
 def terminal_envelope(orgnr: str, run_id: str, started: str, claims: list, evidence: list, snapshots: list, changes: list, errors: list, clock: float, budget: Budget, state: str) -> dict[str, Any]:
     completed = now()
-    available = [claim for claim in claims if claim.get("availability") == "available"]
-    summary = {
-        "headline": next((str(c["value"]) for c in available if c["field"] == "company.legal_name"), orgnr),
-        "supported_fact_count": len(available),
-        "changed_fact_count": len(changes),
-        "unknown_families": [c["field"] for c in claims if c.get("availability") != "available"],
-        "explanation": "Profile built from official Norwegian registers. Missing fields remain explicit and no unsupported value is inferred.",
-    }
+    summary = build_synthesis(orgnr, claims, changes)
     return {
         "organisation_number": orgnr,
         "availability": state,

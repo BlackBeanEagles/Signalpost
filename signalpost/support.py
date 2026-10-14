@@ -50,7 +50,7 @@ def _amount(value: Any) -> str | None:
         return None
 
 
-def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, lookback_days: int = 365, max_per_company: int = 5, total_timeout: float = 180.0) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, lookback_days: int = 365, max_per_company: int = 5, total_timeout: float = 30.0) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
     budget.reserve()
     directory.mkdir(parents=True, exist_ok=True)
     retrieved = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -61,7 +61,7 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
         with tempfile.NamedTemporaryFile("wb", delete=False, dir=directory, prefix="support-", suffix=".csv") as handle:
             temporary_path = Path(handle.name)
             request = urllib.request.Request(URL, headers={"User-Agent": "SignalPost/2.0"})
-            with urllib.request.urlopen(request, timeout=45) as response:
+            with urllib.request.urlopen(request, timeout=10) as response:
                 while True:
                     if time.perf_counter() - started > total_timeout:
                         raise TimeoutError("support registry exceeded total transfer deadline")

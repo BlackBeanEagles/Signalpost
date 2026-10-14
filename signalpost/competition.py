@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from .agent import research_company
+from .agent import build_synthesis, research_company
 from .budget import Budget
 from .sources import HttpClient, now
 from .state import StateStore
@@ -55,7 +55,25 @@ def _atomic_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
         raise
 
 
-def run_official_batch(input_path: Path, output_path: Path, report_path: Path, state_path: Path, run_id: str, workers: int = 8, max_requests: int = 2000, bulk_path: Path | None = None) -> dict[str, Any]:
+def plan_modules(company_count: int, max_requests: int, bulk_identity: bool) -> tuple[set[str], int]:
+    if company_count < 1:
+        raise ValueError("company count must be positive")
+    requests_per_company = max(0, max_requests - 1) // company_count
+    remaining = requests_per_company if bulk_identity else max(0, requests_per_company - 1)
+    enabled_modules = {"registry"}
+    for module in ("financials", "roles"):
+        if remaining:
+            enabled_modules.add(module); remaining -= 1
+    website_pages = min(5, remaining)
+    if website_pages:
+        enabled_modules.add("website"); remaining -= website_pages
+    for module in ("locations", "group"):
+        if remaining:
+            enabled_modules.add(module); remaining -= 1
+    return enabled_modules, website_pages
+
+
+def run_official_batch(input_path: Path, output_path: Path, report_path: Path, state_path: Path, run_id: str, workers: int = 8, max_requests: int = 15000, bulk_path: Path | None = None) -> dict[str, Any]:
     inputs = read_inputs(input_path)
     if not 1 <= workers <= 32:
         raise ValueError("workers must be between 1 and 32")
@@ -67,18 +85,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     if bulk_path:
         bulk_records, bulk_hash = read_bulk_selected(bulk_path, set(inputs))
     support_awards, support_report = fetch_support_awards(set(inputs), budget, state_path.parent)
-    requests_per_company = max(0, max_requests - 1) // len(inputs)
-    remaining = requests_per_company if bulk_path else max(0, requests_per_company - 1)
-    enabled_modules = {"registry"}
-    for module in ("financials", "roles"):
-        if remaining:
-            enabled_modules.add(module); remaining -= 1
-    website_pages = min(5, remaining)
-    if website_pages:
-        enabled_modules.add("website"); remaining -= website_pages
-    for module in ("locations", "group"):
-        if remaining:
-            enabled_modules.add(module); remaining -= 1
+    enabled_modules, website_pages = plan_modules(len(inputs), max_requests, bulk_path is not None)
     indexed: dict[int, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=workers) as executor:
         def enrich(value: str) -> dict[str, Any]:
@@ -109,7 +116,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
         for row in rows:
             if row["availability"] == "available":
                 row["changes"] = store.apply(row["organisation_number"], row["claims"], row["evidence"], row["run"]["completed_at"])
-                row["synthesis"]["changed_fact_count"] = len(row["changes"])
+                row["synthesis"] = build_synthesis(row["organisation_number"], row["claims"], row["changes"])
     finally:
         store.close()
     _atomic_jsonl(output_path, rows)
