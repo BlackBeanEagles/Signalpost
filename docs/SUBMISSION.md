@@ -25,11 +25,11 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 - Norwegian Licence for Open Government Data (NLOD) 2.0
 - No model, paid API, personal credential, external cache or restricted-platform scraper
 - Expected third-party cost per official run: $0
-- Expected request count: one shared support snapshot plus budget-adaptive official/company-owned modules. The default 17,000-request ceiling is sized to retain the high-value role, location, group and verified-website modules plus up to two bounded exact-identity website discovery candidates on the current 1,500-company official batch; `--max-requests` can be lowered to match an evaluator-supplied ceiling.
+- Expected request count: one bounded shared support-snapshot request, run concurrently with budget-adaptive official/company-owned modules. The default 17,000-request ceiling is sized to retain the high-value role, location, group and verified-website modules plus up to two bounded exact-identity website discovery candidates on the current 1,500-company official batch; `--max-requests` can be lowered to match an evaluator-supplied ceiling.
 
 ## Smoke result
 
-`reports/smoke-100-v13-report.json` and `reports/smoke-100-v13-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,468 supported claims including four verified company sites, two dated news items and two exact-account social profiles, used 576 requests, cost $0, and passed the local contract audit. The shared support-awards download timed out, so those claims were unavailable in this sample. These are local smoke metrics, not Builderr's pending fresh-company score.
+`reports/smoke-100-v15-report.json` and `reports/smoke-100-v15-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,469 supported claims including four verified company sites, two dated news items, two exact-account social profiles and four recent official support awards, used 570 requests, cost $0, completed in 63.2 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics, not Builderr's pending fresh-company score.
 
 ## External actions remaining
 

@@ -31,7 +31,7 @@ For every valid organisation number the agent queries five official Norwegian so
 - official registered roles;
 - official corporate-group structure;
 - official registered workplaces/subunits.
-- the shared official Støtteregisteret award snapshot when it completes within its bounded transfer deadline.
+- recent Støtteregisteret awards found in a bounded shared download, with exact primary-recipient matching and explicit partial-snapshot status.
 
 The frozen bulk registry snapshot is used for identity without consuming outbound requests. The runner automatically chooses the highest-value additional modules that fit the batch size and `--max-requests` budget, so a growing official batch still returns every required envelope.
 
@@ -54,17 +54,17 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in `smoke-100-v13` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit, with redirect and social-account precision checks:
+The checked-in `smoke-100-v15` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit, with redirect, social-account, and support-award precision checks:
 
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
-- 3,468 supported claims, including four verified company sites, two dated company news items and two exact-account social profiles
-- 509 evidence records from 576 requests
+- 3,469 supported claims, including four verified company sites, two dated company news items, two exact-account social profiles and four recent official support awards
+- 512 evidence records from 570 requests
 - $0 third-party API cost
-- 97.5 seconds wall time
+- 63.2 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
-The shared public-support snapshot is 306 MB and exceeded its 30-second transfer deadline during this run, so support-award claims were unavailable. The 100 output envelopes still passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
+The full public-support CSV is 306 MB. SignalPost now downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Four exact-recipient awards were supported in this sample; absence from the bounded prefix does not mean a company has no awards. The 100 output envelopes passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
 
 Run the tests with:
 
@@ -72,7 +72,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 31 deterministic tests, including parent-site, redirect-scope, exact-social-account, and dated-news regression cases.
+The current suite contains 33 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, and partial UTF-16 support-registry regression cases.
 
 ## Source rights and operations
 

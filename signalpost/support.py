@@ -50,12 +50,75 @@ def _amount(value: Any) -> str | None:
         return None
 
 
-def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, lookback_days: int = 365, max_per_company: int = 5, total_timeout: float = 30.0) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
-    budget.reserve()
+def _encoding(path: Path) -> tuple[str, bytes]:
+    with path.open("rb") as handle:
+        prefix = handle.read(4)
+    if prefix.startswith(b"\xff\xfe"):
+        return "utf-16", b"\n\x00"
+    if prefix.startswith(b"\xfe\xff"):
+        return "utf-16", b"\x00\n"
+    if prefix[1:2] == b"\x00":
+        return "utf-16-le", b"\n\x00"
+    if prefix[:1] == b"\x00":
+        return "utf-16-be", b"\x00\n"
+    return "utf-8-sig", b"\n"
+
+
+def _trim_incomplete_row(path: Path, newline: bytes) -> None:
+    with path.open("rb+") as handle:
+        end = handle.seek(0, 2)
+        while end:
+            start = max(0, end - 65536)
+            handle.seek(start)
+            tail = handle.read(end - start)
+            last = tail.rfind(newline)
+            if last >= 0:
+                handle.truncate(start + last + len(newline))
+                return
+            end = start
+    raise ValueError("support snapshot contains no complete CSV row")
+
+
+def _parse_support_rows(path: Path, targets: set[str], cutoff: date, max_per_company: int, latest: date) -> dict[str, list[dict[str, Any]]]:
+    encoding, _ = _encoding(path)
+    with path.open("r", encoding=encoding, newline="") as handle:
+        sample = handle.read(65536); handle.seek(0)
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+        reader = csv.DictReader(handle, dialect=dialect)
+        headers = [h for h in (reader.fieldnames or []) if h]
+        recipient = _header(headers, "organisasjonsnummer", "mottaker", exclude=("giver", "spesifisert"))
+        awarded = _header(headers, "tildelingsdato")
+        amount = _header(headers, "tildelt", "belop", exclude=("valuta",))
+        currency = _header(headers, "tildelt", "belop", "valuta")
+        measure = _header(headers, "stottetiltaksnummer")
+        giver = _header(headers, "navn", "stottegiver")
+        recipient_name = _header(headers, "navn", "stottemottaker", exclude=("spesifisert",))
+        if not recipient or not awarded or not amount:
+            raise ValueError("support registry columns changed")
+        found: dict[str, list[dict[str, Any]]] = {}
+        for row_number, row in enumerate(reader, 2):
+            org = re.sub(r"\D", "", str(row.get(recipient) or ""))
+            if org not in targets:
+                continue
+            event_date = _date(row.get(awarded))
+            if not event_date or not cutoff <= event_date <= latest:
+                continue
+            row_body = "|".join(str(row.get(h) or "") for h in headers)
+            row_hash = hashlib.sha256(row_body.encode("utf-8")).hexdigest()
+            value = {"awarded_at": event_date.isoformat(), "amount": _amount(row.get(amount)), "currency": str(row.get(currency) or "").strip() or None, "support_measure_number": str(row.get(measure) or "").strip() or None, "recipient_name": str(row.get(recipient_name) or "").strip() or None, "granting_authority": str(row.get(giver) or "").strip() or None}
+            found.setdefault(org, []).append({"row": row_number, "hash": row_hash, "value": value})
+    for rows in found.values():
+        rows.sort(key=lambda item: item["value"]["awarded_at"], reverse=True); del rows[max_per_company:]
+    return found
+
+
+def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, lookback_days: int = 365, max_per_company: int = 5, total_timeout: float = 60.0, budget_reserved: bool = False) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    if not budget_reserved:
+        budget.reserve()
     directory.mkdir(parents=True, exist_ok=True)
     retrieved = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     started = time.perf_counter()
-    digest = hashlib.sha256(); size = 0
+    digest = hashlib.sha256(); size = 0; partial_reason = None
     temporary_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile("wb", delete=False, dir=directory, prefix="support-", suffix=".csv") as handle:
@@ -64,46 +127,30 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
             with urllib.request.urlopen(request, timeout=10) as response:
                 while True:
                     if time.perf_counter() - started > total_timeout:
-                        raise TimeoutError("support registry exceeded total transfer deadline")
-                    chunk = response.read(1024 * 1024)
+                        partial_reason = "transfer_deadline"
+                        break
+                    try:
+                        chunk = response.read(1024 * 1024)
+                    except (TimeoutError, urllib.error.URLError):
+                        partial_reason = "transfer_interrupted"
+                        break
                     if not chunk:
                         break
                     size += len(chunk)
                     if size > MAX_BYTES:
                         raise ValueError("support registry snapshot exceeds safety limit")
                     digest.update(chunk); handle.write(chunk); handle.flush()
-        prefix = temporary_path.read_bytes()[:4]
-        encoding = "utf-16" if prefix.startswith((b"\xff\xfe", b"\xfe\xff")) or prefix[1:2] == b"\x00" else "utf-8-sig"
-        with temporary_path.open("r", encoding=encoding, newline="") as handle:
-            sample = handle.read(65536); handle.seek(0)
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
-            reader = csv.DictReader(handle, dialect=dialect)
-            headers = [h for h in (reader.fieldnames or []) if h]
-            recipient = _header(headers, "organisasjonsnummer", "mottaker", exclude=("giver", "spesifisert"))
-            awarded = _header(headers, "tildelingsdato")
-            amount = _header(headers, "tildelt", "belop", exclude=("valuta",))
-            currency = _header(headers, "tildelt", "belop", "valuta")
-            measure = _header(headers, "stottetiltaksnummer")
-            giver = _header(headers, "navn", "stottegiver")
-            recipient_name = _header(headers, "navn", "stottemottaker", exclude=("spesifisert",))
-            if not recipient or not awarded or not amount:
-                raise ValueError("support registry columns changed")
-            cutoff = datetime.now(timezone.utc).date() - timedelta(days=lookback_days)
-            found: dict[str, list[dict[str, Any]]] = {}
-            for row_number, row in enumerate(reader, 2):
-                org = re.sub(r"\D", "", str(row.get(recipient) or ""))
-                if org not in targets:
-                    continue
-                event_date = _date(row.get(awarded))
-                if not event_date or event_date < cutoff:
-                    continue
-                row_body = "|".join(str(row.get(h) or "") for h in headers)
-                row_hash = hashlib.sha256(row_body.encode("utf-8")).hexdigest()
-                value = {"awarded_at": event_date.isoformat(), "amount": _amount(row.get(amount)), "currency": str(row.get(currency) or "").strip() or None, "support_measure_number": str(row.get(measure) or "").strip() or None, "recipient_name": str(row.get(recipient_name) or "").strip() or None, "granting_authority": str(row.get(giver) or "").strip() or None}
-                found.setdefault(org, []).append({"row": row_number, "hash": row_hash, "value": value})
-        for rows in found.values():
-            rows.sort(key=lambda item: item["value"]["awarded_at"], reverse=True); del rows[max_per_company:]
-        return found, {"status": "available", "source_url": URL, "retrieved_at": retrieved, "snapshot_sha256": digest.hexdigest(), "bytes": size, "companies": len(found), "claims": sum(map(len, found.values())), "runtime_ms": round((time.perf_counter() - started) * 1000)}
+        if partial_reason:
+            _, newline = _encoding(temporary_path)
+            _trim_incomplete_row(temporary_path, newline)
+            size = temporary_path.stat().st_size
+            digest = hashlib.sha256()
+            with temporary_path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        latest = datetime.now(timezone.utc).date()
+        found = _parse_support_rows(temporary_path, targets, latest - timedelta(days=lookback_days), max_per_company, latest)
+        return found, {"status": "partial" if partial_reason else "available", "source_url": URL, "retrieved_at": retrieved, "snapshot_sha256": digest.hexdigest(), "bytes": size, "companies": len(found), "claims": sum(map(len, found.values())), "complete_snapshot": not bool(partial_reason), "partial_reason": partial_reason, "runtime_ms": round((time.perf_counter() - started) * 1000)}
     except Exception as exc:
         return {}, {"status": "failed", "source_url": URL, "retrieved_at": retrieved, "snapshot_sha256": digest.hexdigest(), "bytes": size, "error": f"{type(exc).__name__}: {exc}", "runtime_ms": round((time.perf_counter() - started) * 1000)}
     finally:
@@ -114,6 +161,6 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
 def attach_support(row: dict[str, Any], awards: list[dict[str, Any]], metadata: dict[str, Any]) -> None:
     for award in awards:
         evidence_id = "ev-support-" + award["hash"][:16]
-        row["evidence"].append({"id": evidence_id, "source_url": URL, "source_class": "official_support_registry", "retrieved_at": metadata["retrieved_at"], "content_sha256": award["hash"], "source_snapshot_sha256": metadata["snapshot_sha256"], "claim_span": f"primary recipient organisation number {row['organisation_number']}; row {award['row']}; award {award['value']}", "extraction_method": "support_primary_recipient_exact_org_v1"})
+        row["evidence"].append({"id": evidence_id, "source_url": URL, "source_class": "official_support_registry", "retrieved_at": metadata["retrieved_at"], "content_sha256": award["hash"], "source_snapshot_sha256": metadata["snapshot_sha256"], "source_snapshot_complete": metadata.get("complete_snapshot", True), "claim_span": f"primary recipient organisation number {row['organisation_number']}; row {award['row']}; award {award['value']}", "extraction_method": "support_primary_recipient_exact_org_v1"})
         row["claims"].append({"key": f"official.support_award:{award['hash'][:16]}", "field": "official.support_award", "value": award["value"], "availability": "available", "confidence": 1.0, "reporting_period": award["value"]["awarded_at"], "evidence_ids": [evidence_id]})
 

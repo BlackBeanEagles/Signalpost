@@ -84,30 +84,35 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     bulk_hash = None
     if bulk_path:
         bulk_records, bulk_hash = read_bulk_selected(bulk_path, set(inputs))
-    support_awards, support_report = fetch_support_awards(set(inputs), budget, state_path.parent)
+    # Reserve the one shared request before workers start; download its bounded
+    # prefix concurrently so the support source does not serially delay the run.
+    budget.reserve()
     enabled_modules, website_pages = plan_modules(len(inputs), max_requests, bulk_path is not None)
     indexed: dict[int, dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        def enrich(value: str) -> dict[str, Any]:
-            company_client = HttpClient(budget)
-            row = research_company(value, company_client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages)
-            row["operations"]["requests"] = company_client.requests
-            return row
+    with ThreadPoolExecutor(max_workers=1) as support_executor:
+        support_future = support_executor.submit(fetch_support_awards, set(inputs), budget, state_path.parent, budget_reserved=True)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            def enrich(value: str) -> dict[str, Any]:
+                company_client = HttpClient(budget)
+                row = research_company(value, company_client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages)
+                row["operations"]["requests"] = company_client.requests
+                return row
 
-        futures = {executor.submit(enrich, value): index for index, value in enumerate(inputs)}
-        for future in as_completed(futures):
-            index = futures[future]
-            try:
-                indexed[index] = future.result()
-            except Exception as exc:
-                indexed[index] = {
-                    "organisation_number": inputs[index],
-                    "availability": "failed",
-                    "run": {"run_id": run_id, "started_at": started, "completed_at": now(), "terminal_status": "completed"},
-                    "claims": [], "evidence": [], "source_snapshots": [], "changes": [], "synthesis": {"headline": inputs[index], "supported_fact_count": 0, "changed_fact_count": 0, "unknown_families": [], "explanation": "Company processing failed; no value was inferred."},
-                    "errors": [{"code": "unhandled_company_error", "message": type(exc).__name__}],
-                    "operations": {"requests": 0, "runtime_ms": 0, "third_party_cost_usd": 0.0},
-                }
+            futures = {executor.submit(enrich, value): index for index, value in enumerate(inputs)}
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    indexed[index] = future.result()
+                except Exception as exc:
+                    indexed[index] = {
+                        "organisation_number": inputs[index],
+                        "availability": "failed",
+                        "run": {"run_id": run_id, "started_at": started, "completed_at": now(), "terminal_status": "completed"},
+                        "claims": [], "evidence": [], "source_snapshots": [], "changes": [], "synthesis": {"headline": inputs[index], "supported_fact_count": 0, "changed_fact_count": 0, "unknown_families": [], "explanation": "Company processing failed; no value was inferred."},
+                        "errors": [{"code": "unhandled_company_error", "message": type(exc).__name__}],
+                        "operations": {"requests": 0, "runtime_ms": 0, "third_party_cost_usd": 0.0},
+                    }
+        support_awards, support_report = support_future.result()
     rows = [indexed[index] for index in range(len(inputs))]
     for row in rows:
         attach_support(row, support_awards.get(row["organisation_number"], []), support_report)

@@ -4,7 +4,7 @@ Official-record sources use Brønnøysundregistrene open-data endpoints on `http
 
 - Enhetsregisteret entities, roles, group structure and subunits
 - Regnskapsregisteret annual-account data
-- Støtteregisteret public-support awards, using only the primary recipient organisation number
+- Støtteregisteret public-support awards, using only the primary recipient organisation number. A bounded incomplete CSV snapshot is labeled partial, and missing rows are not treated as proof of no award.
 
 The sources use the Norwegian Licence for Open Government Data (NLOD) 2.0. SignalPost sends no secrets or personal account credentials.
 
