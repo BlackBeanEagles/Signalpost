@@ -173,8 +173,9 @@ def build_synthesis(orgnr: str, claims: list[dict[str, Any]], changes: list[dict
     roles = by_field.get("people.official_role", [])
     locations = by_field.get("locations.registered_workplace", [])
     jobs = by_field.get("hiring.job_posting", [])
-    activity = by_field.get("public.activity_item", []) or by_field.get("public.activity_page", [])
-    public_summary = f"The profile contains {len(roles)} active registered role record(s), {len(locations)} registered workplace(s), {len(jobs)} current job posting(s), and {len(activity)} public activity signal(s)."
+    news = by_field.get("public.activity_item", [])
+    activity_pages = by_field.get("public.activity_page", [])
+    public_summary = f"The profile contains {len(roles)} registered role record(s), {len(locations)} registered workplace(s), {len(jobs)} company-attributed job posting(s), {len(news)} dated company news item(s), and {len(activity_pages)} company news page(s)."
 
     unknowns = sorted({str(item.get("field")) for item in claims if item.get("availability") != "available"})
     if changes:

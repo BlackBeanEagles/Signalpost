@@ -1,6 +1,6 @@
 # Source and publication policy
 
-Enabled sources are limited to official Brønnøysundregistrene open-data endpoints on `https://data.brreg.no`:
+Official-record sources use Brønnøysundregistrene open-data endpoints on `https://data.brreg.no`:
 
 - Enhetsregisteret entities, roles, group structure and subunits
 - Regnskapsregisteret annual-account data
@@ -12,5 +12,7 @@ The organisation number is the identity anchor. A response is published only whe
 
 LinkedIn, Meta, Glassdoor, Indeed, Google and unofficial scraper clients are disabled. New connectors may be added only after documenting their licence/terms, enforcing a fixed outbound allowlist, preserving immutable evidence, and passing a zero-wrong-company evaluation gate.
 
-Company-owned pages are fetched only from the registry-listed domain and public redirects. DNS and every redirect are rejected if they resolve to a private, loopback, link-local or otherwise non-public address. External claims require the exact organisation number, or strong legal-name plus official contact/domain corroboration.
+Company-owned pages are fetched from the registry-listed website or a bounded discovery candidate. DNS and every redirect are rejected if they resolve to a private, loopback, link-local or otherwise non-public address. The homepage must identify the legal entity through its organisation number or matching branding on the registry-listed domain. A group homepage, a different legal name, or a page listing multiple legal entities is withheld. Discovery candidates without a registry-listed domain require the exact organisation number. When the registered homepage is a company subsection, crawling stays within that subsection.
+
+Footer social links and navigation labels are never published as company profiles or news. Social links require exact-company Organization structured data and a matching account path. News items require an individual same-site article, its own `datePublished`, and article content about the company. Job listings require exact-company `hiringOrganization` structured data. Ambiguous material remains unavailable rather than being attributed to the wrong company.
 

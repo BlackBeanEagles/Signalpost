@@ -54,16 +54,17 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in report and envelopes under `reports/` are a live 100-company run:
+The checked-in `smoke-100-v12` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit:
 
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
-- 3,669 supported claims, including 223 strictly verified company-site claims across 13 companies
-- 538 evidence records from 632 requests
-- 0 false changes on an immediate repeat
+- 3,468 supported claims, including four verified company sites and two dated company news items
+- 512 evidence records from 576 requests
 - $0 third-party API cost
-- 88.4 seconds wall time
+- 96.0 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
+
+The shared public-support snapshot exceeded its 30-second transfer deadline during this run, so support-award claims were unavailable. The 100 output envelopes still passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
 
 Run the tests with:
 
@@ -71,11 +72,11 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 20 deterministic tests.
+The current suite contains 27 deterministic tests, including parent-site, footer-social, and dated-news regression cases.
 
 ## Source rights and operations
 
-Only official Brønnøysundregistrene open-data endpoints are enabled. The data is published under the Norwegian Licence for Open Government Data (NLOD) 2.0. No restricted social, job or search platform is scraped. Runtime dependencies are empty; the build backend is pinned.
+Official records come from Brønnøysundregistrene open-data endpoints under the Norwegian Licence for Open Government Data (NLOD) 2.0. Public company-owned websites are fetched for bounded, identity-checked evidence. No restricted social, job or search platform is scraped. Runtime dependencies are empty; the build backend is pinned.
 
 The official challenge contract scores 50 recall/coverage, 30 precision/evidence, 12 synthesis and 8 UX. SignalPost prioritizes exact-company official coverage and reproducibility. See `docs/SUBMISSION.md` for the final external submission steps.
 

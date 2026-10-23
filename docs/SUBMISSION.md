@@ -6,7 +6,7 @@
 - Exactly one terminal envelope per input, including failures
 - Allowed availability states and explicit missing fields
 - Official identity, financials, roles, groups, workplaces and public-support awards
-- Strictly verified company-owned descriptions, contact channels, careers/jobs, social links and activity pages
+- Company-owned descriptions, contact channels, careers/jobs, social links and dated news only when exact-entity evidence supports them
 - Evidence hashes, timestamps, source classes and extraction methods
 - Persistent snapshots, claim history and typed refresh changes
 - Machine-readable 100-company report and audited output
@@ -29,17 +29,17 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 
 ## Smoke result
 
-`reports/smoke-100-report.json` and `reports/smoke-100-envelopes.jsonl` contain a live 100-company repeat run. It completed all 100 inputs, produced no failed envelopes, emitted 3,669 supported claims including 223 verified company-site claims across 13 companies, used 632 requests, cost $0, and passed the local contract audit.
+`reports/smoke-100-v12-report.json` and `reports/smoke-100-v12-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,468 supported claims including four verified company sites and two dated news items, used 576 requests, cost $0, and passed the local contract audit. The shared support-awards download timed out, so those claims were unavailable in this sample. These are local smoke metrics, not Builderr's pending fresh-company score.
 
 ## External actions remaining
 
-Repository URL: `ADD_AFTER_CREATING_THE_PUBLIC_REPOSITORY`
+Repository URL: `https://github.com/BlackBeanEagles/Signalpost`
 
 Exact commit hash: use `git rev-parse HEAD` after the final commit.
 
-Contact details: `ADD_NAME_AND_EMAIL_BEFORE_SUBMISSION`
+Contact details: use the registration email and participant name from the Unstop entry.
 
 Send the repository URL, exact commit hash, evaluator command, API/licence declaration, expected cost and contact details to `submit@builderr.ai`. Register the project link on Unstop separately.
 
-Builderr lists the challenge closing date as 21 October 2026 and says revised commit hashes close 18 October 2026. Unstop displayed an earlier 17 October registration deadline. Treat 17 October as the safe submission cutoff unless the organiser confirms otherwise.
+The organiser's latest direct email confirms the recorded submission at commit `5445c95` (version 2 of 5) and asks for audit fixes before 7 November. Send the new exact commit URL when the updated revision is ready; the published score is still pending its fresh-company rerun.
 
