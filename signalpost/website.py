@@ -193,6 +193,16 @@ def _in_site_scope(url: str, home: str) -> bool:
     return not prefix or path == prefix or path.startswith(prefix + "/")
 
 
+def _company_social_account(url: str, registry: dict[str, Any]) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in SOCIAL_HOSTS:
+        return False
+    account = parsed.path.rstrip("/").rsplit("/", 1)[-1].lstrip("@")
+    slug = re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", account).encode("ascii", "ignore").decode().casefold())
+    name_tokens = _tokens(registry.get("navn"))
+    return bool(any(len(word) >= 4 for word in name_tokens) and slug == "".join(name_tokens))
+
+
 def _exact_organization(node: Any, orgnr: str, registry: dict[str, Any], site: str) -> bool:
     if not isinstance(node, dict):
         return False
@@ -242,11 +252,7 @@ def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dic
                 add("locations.company_reported", {key: address.get(key) for key in ("streetAddress", "postalCode", "addressLocality", "addressCountry") if address.get(key)})
             same_as = node.get("sameAs")
             for url in same_as if isinstance(same_as, list) else [same_as]:
-                parsed = urllib.parse.urlparse(str(url or ""))
-                account = parsed.path.rstrip("/").rsplit("/", 1)[-1]
-                slug = re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", account).encode("ascii", "ignore").decode().casefold())
-                distinctive = [word for word in _tokens(registry.get("navn")) if len(word) >= 4]
-                if (parsed.hostname or "").casefold() in SOCIAL_HOSTS and distinctive and all(word in slug for word in distinctive):
+                if _company_social_account(str(url or ""), registry):
                     add("public.social_profile", str(url))
         if kinds & {"NewsArticle", "BlogPosting", "PressRelease"} or (from_news_listing and "Article" in kinds):
             headline = node.get("headline") or node.get("name")
@@ -284,10 +290,10 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         except Exception as exc:
             last_error = type(exc).__name__
             continue
-        if candidate.status == 200 and isinstance(candidate.body, str):
+        if candidate.status == 200 and isinstance(candidate.body, str) and _same_host(candidate.url, home):
             first = candidate
             break
-        last_error = candidate.error or f"HTTP {candidate.status}"
+        last_error = "Homepage redirected to a different domain" if candidate.status == 200 and not _same_host(candidate.url, home) else candidate.error or f"HTTP {candidate.status}"
     if first is None:
         result.errors.append({"module": "website", "message": last_error or "No candidate website responded"})
         return result
@@ -295,7 +301,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     primary_heading = " ".join(parser.headings)
     title = " ".join(parser.title)
     heading = primary_heading if _name_match(primary_heading, str(registry.get("navn") or "")) else title
-    if re.search(r"\b(?:group|konsern|konsernet)\b", primary_heading.casefold()) or not _name_match(heading, str(registry.get("navn") or "")):
+    if re.search(r"\b(?:group|konsern|konsernet)\b", primary_heading.casefold()) or _other_legal_name(primary_heading, str(registry.get("navn") or "")) or not _name_match(heading, str(registry.get("navn") or "")):
         result.errors.append({"module": "website", "message": "ambiguous identity", "detail": "Homepage does not identify the exact company."})
         return result
     pages = [(first, parser)]
@@ -322,7 +328,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         return next((index for index, words in enumerate(groups) if any(word in value for word in words)), len(groups))
     for url in sorted(candidates, key=priority)[: max(0, min(2, max_pages - 1))]:
         fetch = client.text(url)
-        if fetch.status == 200 and isinstance(fetch.body, str):
+        if fetch.status == 200 and isinstance(fetch.body, str) and _in_site_scope(fetch.url, first.url):
             page = PageParser(); page.feed(fetch.body); pages.append((fetch, page))
     verified, proof = _verified(" ".join(" ".join(page.text) for _, page in pages), orgnr, registry, heading=heading)
     if not verified:
@@ -349,7 +355,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             if any(absolute.rstrip("/") == existing.url.rstrip("/") for existing, _ in pages):
                 continue
             article = client.text(absolute)
-            if article.status == 200 and isinstance(article.body, str):
+            if article.status == 200 and isinstance(article.body, str) and _in_site_scope(article.url, first.url):
                 article_page = PageParser(); article_page.feed(article.body)
                 pages.append((article, article_page))
                 article_urls.add(article.url)
@@ -359,7 +365,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         if any(url.rstrip("/") == existing.url.rstrip("/") for existing, _ in pages):
             continue
         fetch = client.text(url)
-        if fetch.status == 200 and isinstance(fetch.body, str):
+        if fetch.status == 200 and isinstance(fetch.body, str) and _in_site_scope(fetch.url, first.url):
             page = PageParser(); page.feed(fetch.body); pages.append((fetch, page))
     evidence_by_url = {}
     for fetch, _ in pages:

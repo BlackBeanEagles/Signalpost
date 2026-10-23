@@ -59,6 +59,48 @@ class WebsiteTests(unittest.TestCase):
         result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=1)
         self.assertFalse(result.claims)
 
+    def test_company_title_cannot_override_another_company_heading(self):
+        pages = {"https://example.no": '<title>Example Company AS</title><h1>Parent Services AS</h1><p>Example Company AS org 123 456 789</p>'}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=1)
+        self.assertFalse(result.claims)
+
+    def test_social_account_containing_company_name_is_not_exact(self):
+        document = '''<script type="application/ld+json">{
+          "@type":"Organization","name":"Example Company AS","url":"https://example.no",
+          "sameAs":["https://www.linkedin.com/company/examplecompanygroup",
+                    "https://www.linkedin.com/company/examplecompany"]
+        }</script>'''
+        fetch = Fetch("https://example.no", 200, document, document.encode(), "2026-10-15T00:00:00Z")
+        claims = _structured_claims(fetch, "ev-1", "123456789", REGISTRY, "https://example.no/")
+        self.assertEqual([c["value"] for c in claims if c["field"] == "public.social_profile"],
+                         ["https://www.linkedin.com/company/examplecompany"])
+
+    def test_linked_page_redirect_outside_company_scope_is_ignored(self):
+        class RedirectClient(FakeClient):
+            def text(self, url):
+                fetched = super().text(url)
+                if url == "https://example.no/news":
+                    return Fetch("https://parent.no/news", 200, '<h1>Parent news</h1><a href="mailto:parent@parent.no">Email</a>', b"parent news", "2026-10-15T00:00:00Z")
+                return fetched
+
+        pages = {"https://example.no": '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'}
+        result = crawl_verified_website("123456789", REGISTRY, RedirectClient(pages))
+        fields = {claim["field"] for claim in result.claims}
+        self.assertIn("website.official", fields)
+        self.assertNotIn("public.activity_page", fields)
+        self.assertNotIn("contact.email", fields)
+        self.assertTrue(all(evidence["source_url"].startswith("https://example.no") for evidence in result.evidence))
+
+    def test_homepage_redirect_to_parent_domain_is_not_verified(self):
+        class RedirectClient(FakeClient):
+            def text(self, url):
+                body = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p>'
+                return Fetch("https://parent.no/company/example", 200, body, body.encode(), "2026-10-15T00:00:00Z")
+
+        result = crawl_verified_website("123456789", REGISTRY, RedirectClient({}), max_pages=1)
+        self.assertFalse(result.claims)
+        self.assertEqual(result.errors[0]["message"], "Homepage redirected to a different domain")
+
     def test_footer_social_and_news_menu_are_not_published(self):
         home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="https://facebook.com/parentgroup">Facebook</a><a href="/news">News</a>'
         news = '<h1>News</h1><a href="/news/#skip-to-content">Skip to the content</a><a href="/products">Product overview</a><a href="/news/contract">Example Company signs a new contract</a>'

@@ -29,7 +29,7 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 
 ## Smoke result
 
-`reports/smoke-100-v12-report.json` and `reports/smoke-100-v12-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,468 supported claims including four verified company sites and two dated news items, used 576 requests, cost $0, and passed the local contract audit. The shared support-awards download timed out, so those claims were unavailable in this sample. These are local smoke metrics, not Builderr's pending fresh-company score.
+`reports/smoke-100-v13-report.json` and `reports/smoke-100-v13-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,468 supported claims including four verified company sites, two dated news items and two exact-account social profiles, used 576 requests, cost $0, and passed the local contract audit. The shared support-awards download timed out, so those claims were unavailable in this sample. These are local smoke metrics, not Builderr's pending fresh-company score.
 
 ## External actions remaining
 

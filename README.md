@@ -54,17 +54,17 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in `smoke-100-v12` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit:
+The checked-in `smoke-100-v13` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit, with redirect and social-account precision checks:
 
 - 100 inputs and 100 terminal outputs
 - 0 failed companies
-- 3,468 supported claims, including four verified company sites and two dated company news items
-- 512 evidence records from 576 requests
+- 3,468 supported claims, including four verified company sites, two dated company news items and two exact-account social profiles
+- 509 evidence records from 576 requests
 - $0 third-party API cost
-- 96.0 seconds wall time
+- 97.5 seconds wall time
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
-The shared public-support snapshot exceeded its 30-second transfer deadline during this run, so support-award claims were unavailable. The 100 output envelopes still passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
+The shared public-support snapshot is 306 MB and exceeded its 30-second transfer deadline during this run, so support-award claims were unavailable. The 100 output envelopes still passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
 
 Run the tests with:
 
@@ -72,7 +72,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 27 deterministic tests, including parent-site, footer-social, and dated-news regression cases.
+The current suite contains 31 deterministic tests, including parent-site, redirect-scope, exact-social-account, and dated-news regression cases.
 
 ## Source rights and operations
 

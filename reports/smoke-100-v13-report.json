@@ -1,0 +1,39 @@
+{
+  "run_id": "precision-hardening-v13",
+  "started_at": "2026-10-23T04:43:28Z",
+  "completed_at": "2026-10-23T04:45:06Z",
+  "input_count": 100,
+  "output_count": 100,
+  "unique_output_count": 100,
+  "available": 100,
+  "failed": 0,
+  "total_claims": 3723,
+  "available_claims": 3468,
+  "evidence_records": 509,
+  "changes": 0,
+  "requests": 576,
+  "third_party_cost_usd": 0.0,
+  "wall_runtime_ms": 97526,
+  "company_runtime_p50_ms": 6370,
+  "company_runtime_p95_ms": 13595,
+  "complete": true,
+  "bulk_registry_snapshot": null,
+  "enabled_modules": [
+    "financials",
+    "group",
+    "locations",
+    "registry",
+    "roles",
+    "website"
+  ],
+  "website_page_budget_per_company": 5,
+  "support_registry": {
+    "status": "failed",
+    "source_url": "https://stotte.brreg.no/nb/oppslag/stoettetildeling/totalbestand/csv",
+    "retrieved_at": "2026-10-23T04:43:28Z",
+    "snapshot_sha256": "6e8a98e48bd4d357239e399373434648746093620663bbd229ca745663f01139",
+    "bytes": 15728640,
+    "error": "TimeoutError: support registry exceeded total transfer deadline",
+    "runtime_ms": 30193
+  }
+}
