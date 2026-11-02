@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -142,6 +143,7 @@ def build_synthesis(orgnr: str, claims: list[dict[str, Any]], changes: list[dict
     address = first("company.business_address") or {}
     employees = first("company.employees")
     description = first("website.description")
+    registered_activity = first("company.activity")
     parts = [name]
     if form:
         parts.append(f"is registered as {form}")
@@ -155,20 +157,32 @@ def build_synthesis(orgnr: str, claims: list[dict[str, Any]], changes: list[dict
         overview += f" The register reports {employees} employee{'s' if employees != 1 else ''}."
     if description:
         overview += f" Its verified website describes the business as: {str(description).strip()}"
+    elif isinstance(registered_activity, str) and registered_activity.strip():
+        overview += f" Its registered activity is: {registered_activity.strip()[:300]}"
 
-    financial_rows = sorted(
-        by_field.get("financial.revenue", []),
-        key=lambda item: str(item.get("reporting_period") or ""),
-        reverse=True,
-    )
+    financial_rows = sorted(by_field.get("financial.revenue", []), key=lambda item: str(item.get("reporting_period") or ""), reverse=True)
     financial_summary = "No annual-account revenue was available in this run."
     if financial_rows:
-        latest = financial_rows[0]
-        period = latest.get("reporting_period") or "latest reported period"
-        result_rows = [row for row in by_field.get("financial.annual_result", []) if row.get("reporting_period") == latest.get("reporting_period")]
-        result_text = f" and annual result {result_rows[0]['value']:,.0f} NOK" if result_rows and isinstance(result_rows[0].get("value"), (int, float)) else ""
-        revenue = latest.get("value")
-        financial_summary = f"For {period}, reported revenue was {revenue:,.0f} NOK{result_text}." if isinstance(revenue, (int, float)) else f"Revenue for {period} was {revenue}."
+        periods = []
+        seen_periods = set()
+        for item in financial_rows:
+            period = str(item.get("reporting_period") or "latest reported period")
+            if period not in seen_periods:
+                seen_periods.add(period)
+                periods.append(item)
+            if len(periods) == 3:
+                break
+        sentences = []
+        for item in periods:
+            period = str(item.get("reporting_period") or "latest reported period")
+            year = period.split("/")[-1][:4] if "/" in period else period[:4]
+            label = year if re.fullmatch(r"\d{4}", year) else period
+            result_rows = [row for row in by_field.get("financial.annual_result", []) if row.get("reporting_period") == item.get("reporting_period")]
+            result_value = result_rows[0].get("value") if result_rows else None
+            result_text = f"; annual result {result_value:,.0f} NOK" if isinstance(result_value, (int, float)) else ""
+            revenue = item.get("value")
+            sentences.append(f"For {label}, reported revenue was {revenue:,.0f} NOK{result_text}." if isinstance(revenue, (int, float)) else f"For {label}, reported revenue was {revenue}{result_text}.")
+        financial_summary = " ".join(sentences)
 
     roles = by_field.get("people.official_role", [])
     locations = by_field.get("locations.registered_workplace", [])

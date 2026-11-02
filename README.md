@@ -7,7 +7,7 @@ Competition-ready, evidence-first research for Norwegian companies. The evaluato
 Python 3.10+ is the only runtime requirement. There are no runtime packages or personal credentials.
 
 ```bash
-python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 12
+python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
 ```
 
 Audit the result:
@@ -54,17 +54,17 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in `smoke-100-v15` report and envelopes under `reports/` are a live 100-company run after the organiser's identity and news audit, with redirect, social-account, and support-award precision checks:
+The checked-in `smoke-300-v18` report and envelopes under `reports/` are a live 300-company run after the organiser's coverage feedback, using the tracked `data/smoke-organisations-300.jsonl` input:
 
-- 100 inputs and 100 terminal outputs
+- 300 inputs and 300 terminal outputs
 - 0 failed companies
-- 3,469 supported claims, including four verified company sites, two dated company news items, two exact-account social profiles and four recent official support awards
-- 512 evidence records from 570 requests
+- 8,381 supported claims, including 12 verified company sites, two dated company news items, two exact-account social profiles and 12 recent official support awards
+- 1,544 evidence records from 1,724 requests
 - $0 third-party API cost
-- 63.2 seconds wall time
+- 98.2 seconds wall time with 24 workers
 - Responsive search and source-verification interface in `reports/signalpost.html`
 
-The full public-support CSV is 306 MB. SignalPost now downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Four exact-recipient awards were supported in this sample; absence from the bounded prefix does not mean a company has no awards. The 100 output envelopes passed the local contract audit. Builderr's fresh-company score is pending; this smoke run is not an official score.
+The full public-support CSV is 306 MB. SignalPost downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Absence from the bounded prefix does not mean a company has no awards. The 300 output envelopes passed the local contract audit. Builderr's official 300-company score is still pending; this different local sample is not that score.
 
 Run the tests with:
 
@@ -72,7 +72,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 33 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, and partial UTF-16 support-registry regression cases.
+The current suite contains 40 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, Norwegian-name discovery, and partial UTF-16 support-registry regression cases.
 
 ## Source rights and operations
 

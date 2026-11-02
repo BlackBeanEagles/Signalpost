@@ -42,7 +42,7 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--report", type=Path, required=True)
     run.add_argument("--state", type=Path, default=Path("state/signalpost.sqlite3"))
     run.add_argument("--run-id", required=True)
-    run.add_argument("--workers", type=int, default=8)
+    run.add_argument("--workers", type=int, default=24)
     run.add_argument("--max-requests", type=int, default=17000, help="Shared request ceiling; sized for the current 1,500-company official batch")
     run.add_argument("--bulk", type=Path, help="Builderr-supplied frozen BRREG CSV or CSV.GZ identity snapshot")
 

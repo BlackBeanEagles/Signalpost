@@ -54,6 +54,19 @@ class WebsiteTests(unittest.TestCase):
         result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=1)
         self.assertIn("website.official", {c["field"] for c in result.claims})
 
+    def test_norwegian_letter_matches_registry_listed_domain(self):
+        registry = {"navn": "AUTOBJØRN AS", "hjemmeside": "https://autobjorn.no"}
+        pages = {"https://autobjorn.no": '<title>Autobjørn AS</title><h1>Autobjørn AS</h1>'}
+        result = crawl_verified_website("123456789", registry, FakeClient(pages), max_pages=1)
+        self.assertIn("website.official", {c["field"] for c in result.claims})
+
+    def test_guessed_domain_needs_full_legal_name_or_exact_number(self):
+        registry = {"navn": "ALSTRA AS"}
+        accepted = crawl_verified_website("123456789", registry, FakeClient({"https://alstra.no": '<title>ALSTRA AS</title><h1>ALSTRA AS</h1>'}), max_pages=1)
+        rejected = crawl_verified_website("123456789", registry, FakeClient({"https://alstra.no": '<title>ALSTRA Group</title><h1>ALSTRA Group</h1>'}), max_pages=1)
+        self.assertIn("website.official", {c["field"] for c in accepted.claims})
+        self.assertFalse(rejected.claims)
+
     def test_different_legal_name_on_same_domain_is_rejected(self):
         pages = {"https://example.no": '<title>Example Company Services AS</title><p>Example Company AS</p>'}
         result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=1)
@@ -74,6 +87,35 @@ class WebsiteTests(unittest.TestCase):
         claims = _structured_claims(fetch, "ev-1", "123456789", REGISTRY, "https://example.no/")
         self.assertEqual([c["value"] for c in claims if c["field"] == "public.social_profile"],
                          ["https://www.linkedin.com/company/examplecompany"])
+
+    def test_verified_site_footer_yields_only_exact_company_social_account(self):
+        home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><footer><a href="https://www.linkedin.com/company/examplecompany">LinkedIn</a><a href="https://www.linkedin.com/company/examplecompanygroup">Group</a><a href="https://facebook.com/webagency">Agency</a></footer>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home}), max_pages=1)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "public.social_profile"], ["https://www.linkedin.com/company/examplecompany"])
+
+    def test_dated_html_news_article_with_company_name_is_published(self):
+        home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'
+        listing = '<a href="/news/contract">Example Company signs a new contract</a>'
+        article = '<meta property="article:published_time" content="2026-10-01"><article><h1>Example Company signs a new contract</h1><p>Example Company has signed a contract today.</p></article>'
+        pages = {"https://example.no": home, "https://example.no/news": listing, "https://example.no/news/contract": article}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages))
+        self.assertEqual(len([c for c in result.claims if c["field"] == "public.activity_item"]), 1)
+
+    def test_undated_html_news_article_is_withheld(self):
+        home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'
+        listing = '<a href="/news/contract">Example Company signs a new contract</a>'
+        article = '<article><h1>Example Company signs a new contract</h1><p>Example Company has signed a contract today.</p></article>'
+        pages = {"https://example.no": home, "https://example.no/news": listing, "https://example.no/news/contract": article}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages))
+        self.assertFalse([c for c in result.claims if c["field"] == "public.activity_item"])
+
+    def test_article_update_time_is_not_publication_date(self):
+        home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'
+        listing = '<a href="/news/contract">Example Company signs a new contract</a>'
+        article = '<article><h1>Example Company signs a new contract</h1><time class="updated" datetime="2026-10-01">Updated</time><p>Example Company has signed a contract.</p></article>'
+        pages = {"https://example.no": home, "https://example.no/news": listing, "https://example.no/news/contract": article}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages))
+        self.assertFalse([c for c in result.claims if c["field"] == "public.activity_item"])
 
     def test_linked_page_redirect_outside_company_scope_is_ignored(self):
         class RedirectClient(FakeClient):
@@ -146,8 +188,17 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual(items[0]["url"], "https://example.no/new-contract/")
 
     def test_missing_registry_site_gets_one_deterministic_discovery_candidate(self):
-        self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no", "https://norsk-eksempel.no"])
+        self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no", "https://norsk-eksempel.no", "https://norskeksempel.com"])
         self.assertEqual(_candidate_homepages({"navn": "Example AS", "hjemmeside": "example.no"}), ["https://example.no"])
+
+    def test_wrong_first_discovery_candidate_does_not_block_exact_second_site(self):
+        registry = {"navn": "Example Company AS"}
+        pages = {"https://examplecompany.no": "<title>Other Company AS</title><h1>Other Company AS</h1>",
+                 "https://example-company.no": "<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p>"}
+        client = FakeClient(pages)
+        result = crawl_verified_website("123456789", registry, client, max_pages=3)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "website.official"], ["https://example-company.no"])
+        self.assertLessEqual(len(client.calls), 3)
 
     def test_exact_org_number_verifies_identity(self):
         ok, _ = _verified("EQUINOR ASA org.nr. 923 609 016", "923609016", {"navn": "EQUINOR ASA"}, heading="EQUINOR ASA")

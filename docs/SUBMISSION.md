@@ -16,7 +16,7 @@
 ## Evaluator command
 
 ```bash
-python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 12
+python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
 ```
 
 ## Declared services and licences
@@ -29,7 +29,7 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 
 ## Smoke result
 
-`reports/smoke-100-v15-report.json` and `reports/smoke-100-v15-envelopes.jsonl` contain the post-audit live 100-company run. It completed all 100 inputs, produced no failed envelopes, emitted 3,469 supported claims including four verified company sites, two dated news items, two exact-account social profiles and four recent official support awards, used 570 requests, cost $0, completed in 63.2 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics, not Builderr's pending fresh-company score.
+`reports/smoke-300-v18-report.json` and `reports/smoke-300-v18-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,381 supported claims including 12 verified company sites, two dated news items, two exact-account social profiles and 12 recent official support awards, used 1,724 requests, cost $0, completed in 98.2 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
 
 ## External actions remaining
 

@@ -22,6 +22,7 @@ class PageParser(html.parser.HTMLParser):
         super().__init__(convert_charrefs=True)
         self.text: list[str] = []
         self.links: list[tuple[str, str]] = []
+        self.footer_links: list[str] = []
         self.news_links: list[str] = []
         self.meta_description = ""
         self.title: list[str] = []
@@ -29,6 +30,9 @@ class PageParser(html.parser.HTMLParser):
         self._title_depth = 0
         self._heading_depth = 0
         self._ignored_depth = 0
+        self._footer_depth = 0
+        self._href_in_footer = False
+        self.published_dates: list[str] = []
         self._href: str | None = None
         self._link_text: list[str] = []
 
@@ -36,29 +40,41 @@ class PageParser(html.parser.HTMLParser):
         values = dict(attrs)
         if tag in {"script", "style", "noscript"}:
             self._ignored_depth += 1
+        if tag == "footer":
+            self._footer_depth += 1
         if tag == "title":
             self._title_depth += 1
         if tag == "h1":
             self._heading_depth += 1
         if tag == "a" and values.get("href"):
             self._href = values["href"]
+            self._href_in_footer = self._footer_depth > 0
             self._link_text = []
             if re.search(r"(?:siste-nytt|news|nyhet|article|post-card|post-item)", str(values.get("class") or ""), re.I):
                 self.news_links.append(values["href"])
         if tag == "meta" and (values.get("name") or values.get("property") or "").casefold() in {"description", "og:description"} and values.get("content"):
             self.meta_description = values["content"].strip()
+        if tag == "meta" and (values.get("property") or values.get("name") or "").casefold() in {"article:published_time", "datepublished"} and values.get("content"):
+            self.published_dates.append(values["content"].strip())
+        if tag == "time" and values.get("datetime") and ((values.get("itemprop") or "").casefold() == "datepublished" or re.search(r"publish|post-date|entry-date", str(values.get("class") or ""), re.I)):
+            self.published_dates.append(values["datetime"].strip())
 
     def handle_endtag(self, tag):
         if tag in {"script", "style", "noscript"}:
             self._ignored_depth = max(0, self._ignored_depth - 1)
+        if tag == "footer":
+            self._footer_depth = max(0, self._footer_depth - 1)
         if tag == "title":
             self._title_depth = max(0, self._title_depth - 1)
         if tag == "h1":
             self._heading_depth = max(0, self._heading_depth - 1)
         if tag == "a" and self._href:
             self.links.append((self._href, " ".join(self._link_text).strip()))
+            if self._href_in_footer:
+                self.footer_links.append(self._href)
             self._href = None
             self._link_text = []
+            self._href_in_footer = False
 
     def handle_data(self, data):
         if self._ignored_depth:
@@ -86,8 +102,13 @@ def _digits(value: Any) -> str:
     return "".join(re.findall(r"\d", str(value or "")))
 
 
+def _ascii(value: Any) -> str:
+    value = str(value or "").casefold().replace("ø", "o").replace("æ", "ae").replace("å", "a")
+    return unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+
+
 def _tokens(value: Any) -> list[str]:
-    ascii_text = unicodedata.normalize("NFKD", str(value or "")).encode("ascii", "ignore").decode().casefold()
+    ascii_text = _ascii(value)
     ignored = {"as", "asa", "enk", "ans", "da", "sa", "nuf", "ba", "a", "s", "ab", "norway", "norge"}
     return [token for token in re.findall(r"[a-z0-9]+", ascii_text) if token not in ignored and len(token) >= 2]
 
@@ -99,13 +120,14 @@ def _candidate_homepages(registry: dict[str, Any]) -> list[str]:
     tokens = _tokens(registry.get("navn"))
     compact = "".join(tokens)
     hyphenated = "-".join(tokens)
-    # A guessed hostname is discovery only. The page must still pass _verified before
-    # a single claim is published. One candidate keeps large official runs bounded.
+    # Guessed hostnames are discovery only; publication still requires exact-entity
+    # proof, and crawl_verified_website caps all outbound candidate requests.
     if not 3 <= len(compact) <= 63:
         return []
     candidates = [f"https://{compact}.no"]
     if hyphenated != compact and len(hyphenated) <= 63:
         candidates.append(f"https://{hyphenated}.no")
+    candidates.append(f"https://{compact}.com")
     return candidates
 
 
@@ -117,12 +139,12 @@ def _name_match(text: str, name: str) -> bool:
 
 def _other_legal_name(heading: str, name: str) -> bool:
     expected = _tokens(name)
-    words = re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKD", heading).encode("ascii", "ignore").decode().casefold())
+    words = re.findall(r"[a-z0-9]+", _ascii(heading))
     suffixes = [i for i, word in enumerate(words) if word in {"as", "asa"}]
     return bool(expected and suffixes and words[max(0, suffixes[-1] - len(expected)):suffixes[-1]] != expected)
 
 
-def _verified(text: str, orgnr: str, registry: dict[str, Any], heading: str = "") -> tuple[bool, str]:
+def _verified(text: str, orgnr: str, registry: dict[str, Any], heading: str = "", site_url: str = "") -> tuple[bool, str]:
     # A footer can list many subsidiaries. A number there cannot establish that the
     # whole site belongs to one of them when the page presents another identity.
     if not heading or not _name_match(heading, str(registry.get("navn") or "")):
@@ -142,6 +164,16 @@ def _verified(text: str, orgnr: str, registry: dict[str, Any], heading: str = ""
         return False, "Homepage identifies multiple legal entities."
     if orgnr in distinct:
         return True, f"Page displays organisation number {orgnr}."
+    if distinct:
+        return False, "Homepage displays another organisation number."
+    if not registry.get("hjemmeside") and site_url:
+        legal_words = re.findall(r"[a-z0-9]+", _ascii(registry.get("navn")))
+        heading_words = re.findall(r"[a-z0-9]+", _ascii(heading))
+        domain_stem = (urllib.parse.urlparse(site_url).hostname or "").casefold().removeprefix("www.").split(".", 1)[0].replace("-", "")
+        compact = "".join(_tokens(registry.get("navn")))
+        exact_legal_name = any(heading_words[index:index + len(legal_words)] == legal_words for index in range(len(heading_words) - len(legal_words) + 1))
+        if len(compact) >= 5 and domain_stem == compact and exact_legal_name and legal_words[-1:] in (["as"], ["asa"]):
+            return True, "Exact legal name and matching discovered domain agree."
     folded_tokens = set(_tokens(heading or text))
     name_tokens = _tokens(registry.get("navn"))
     matched_weight = sum(len(token) for token in name_tokens if token in folded_tokens)
@@ -198,7 +230,7 @@ def _company_social_account(url: str, registry: dict[str, Any]) -> bool:
     if parsed.scheme != "https" or (parsed.hostname or "").casefold() not in SOCIAL_HOSTS:
         return False
     account = parsed.path.rstrip("/").rsplit("/", 1)[-1].lstrip("@")
-    slug = re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKD", account).encode("ascii", "ignore").decode().casefold())
+    slug = re.sub(r"[^a-z0-9]", "", _ascii(account))
     name_tokens = _tokens(registry.get("navn"))
     return bool(any(len(word) >= 4 for word in name_tokens) and slug == "".join(name_tokens))
 
@@ -277,27 +309,61 @@ def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dic
     return claims
 
 
+def _html_article_claim(fetch: Fetch, page: PageParser, registry: dict[str, Any]) -> dict[str, Any] | None:
+    article = re.search(r"<article\b[^>]*>(.*?)</article>", str(fetch.body or ""), re.I | re.S)
+    if not article:
+        return None
+    content = PageParser(); content.feed(article.group(1))
+    title = " ".join(content.headings or page.headings).strip()
+    published = next((_published_date(value, fetch.retrieved_at) for value in content.published_dates + page.published_dates if _published_date(value, fetch.retrieved_at)), None)
+    if not published or len(title) < 12 or not _name_match(" ".join(content.text), str(registry.get("navn") or "")):
+        return None
+    value = {"title": title[:300], "url": fetch.url, "published_at": published}
+    identity = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    return {"key": f"public.activity_item:{hashlib.sha256(identity.encode()).hexdigest()[:12]}", "field": "public.activity_item", "value": value, "availability": "available", "confidence": 0.95}
+
+
 def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpClient, max_pages: int = 5) -> WebsiteResult:
     result = WebsiteResult()
     home_candidates = _candidate_homepages(registry)
     if not home_candidates:
         return result
+    attempts = 0
+
+    def fetch_page(url: str) -> Fetch | None:
+        nonlocal attempts
+        if attempts >= max_pages:
+            return None
+        attempts += 1
+        return client.text(url)
+
     first = None
     last_error = None
+    parser = None
     for home in home_candidates:
         try:
-            candidate = client.text(home)
+            candidate = fetch_page(home)
         except Exception as exc:
             last_error = type(exc).__name__
             continue
+        if candidate is None:
+            break
         if candidate.status == 200 and isinstance(candidate.body, str) and _same_host(candidate.url, home):
+            candidate_parser = PageParser(); candidate_parser.feed(candidate.body)
+            candidate_heading = " ".join(candidate_parser.headings)
+            candidate_title = " ".join(candidate_parser.title)
+            displayed = candidate_heading if _name_match(candidate_heading, str(registry.get("navn") or "")) else candidate_title
+            if not _name_match(displayed, str(registry.get("navn") or "")) or _other_legal_name(candidate_heading, str(registry.get("navn") or "")):
+                last_error = "ambiguous identity"
+                continue
             first = candidate
+            parser = candidate_parser
             break
         last_error = "Homepage redirected to a different domain" if candidate.status == 200 and not _same_host(candidate.url, home) else candidate.error or f"HTTP {candidate.status}"
     if first is None:
         result.errors.append({"module": "website", "message": last_error or "No candidate website responded"})
         return result
-    parser = PageParser(); parser.feed(first.body)
+    assert parser is not None
     primary_heading = " ".join(parser.headings)
     title = " ".join(parser.title)
     heading = primary_heading if _name_match(primary_heading, str(registry.get("navn") or "")) else title
@@ -327,10 +393,12 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         groups = (("career", "karriere", "jobb", "jobs"), ("news", "aktuelt", "nyheter", "blog", "press"), ("contact", "kontakt"), ("about", "om-oss"))
         return next((index for index, words in enumerate(groups) if any(word in value for word in words)), len(groups))
     for url in sorted(candidates, key=priority)[: max(0, min(2, max_pages - 1))]:
-        fetch = client.text(url)
+        fetch = fetch_page(url)
+        if fetch is None:
+            break
         if fetch.status == 200 and isinstance(fetch.body, str) and _in_site_scope(fetch.url, first.url):
             page = PageParser(); page.feed(fetch.body); pages.append((fetch, page))
-    verified, proof = _verified(" ".join(" ".join(page.text) for _, page in pages), orgnr, registry, heading=heading)
+    verified, proof = _verified(" ".join(" ".join(page.text) for _, page in pages), orgnr, registry, heading=heading, site_url=first.url)
     if not verified:
         result.errors.append({"module": "website", "message": "ambiguous identity", "detail": proof})
         return result
@@ -338,12 +406,12 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     # until an article page supplies its own publication date and company context.
     article_urls: set[str] = set()
     for fetch, page in list(pages):
-        if len(pages) >= max_pages:
+        if attempts >= max_pages:
             break
         if not any(word in urllib.parse.urlparse(fetch.url).path.casefold() for word in ("news", "aktuelt", "nyheter", "blog", "press")):
             continue
         for href, label in [(href, "News article") for href in page.news_links] + page.links:
-            if len(pages) >= max_pages:
+            if attempts >= max_pages:
                 break
             parsed_article = urllib.parse.urlparse(urllib.parse.urljoin(fetch.url, href))
             absolute = urllib.parse.urlunparse((parsed_article.scheme, parsed_article.netloc, parsed_article.path, "", "", ""))
@@ -354,17 +422,21 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
                 continue
             if any(absolute.rstrip("/") == existing.url.rstrip("/") for existing, _ in pages):
                 continue
-            article = client.text(absolute)
+            article = fetch_page(absolute)
+            if article is None:
+                break
             if article.status == 200 and isinstance(article.body, str) and _in_site_scope(article.url, first.url):
                 article_page = PageParser(); article_page.feed(article.body)
                 pages.append((article, article_page))
                 article_urls.add(article.url)
     for url in sorted(candidates, key=priority):
-        if len(pages) >= max_pages:
+        if attempts >= max_pages:
             break
         if any(url.rstrip("/") == existing.url.rstrip("/") for existing, _ in pages):
             continue
-        fetch = client.text(url)
+        fetch = fetch_page(url)
+        if fetch is None:
+            break
         if fetch.status == 200 and isinstance(fetch.body, str) and _in_site_scope(fetch.url, first.url):
             page = PageParser(); page.feed(fetch.body); pages.append((fetch, page))
     evidence_by_url = {}
@@ -378,7 +450,17 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     seen = set()
     for fetch, page in pages:
         ev = evidence_by_url[fetch.url]; path = urllib.parse.urlparse(fetch.url).path.casefold()
-        result.claims.extend(_structured_claims(fetch, ev["id"], orgnr, registry, first.url, fetch.url in article_urls))
+        structured = _structured_claims(fetch, ev["id"], orgnr, registry, first.url, fetch.url in article_urls)
+        result.claims.extend(structured)
+        if fetch.url in article_urls and not any(claim["field"] == "public.activity_item" for claim in structured):
+            article_claim = _html_article_claim(fetch, page, registry)
+            if article_claim:
+                article_claim["evidence_ids"] = [ev["id"]]
+                result.claims.append(article_claim)
+        for href in page.footer_links:
+            absolute = urllib.parse.urljoin(fetch.url, href)
+            if _company_social_account(absolute, registry):
+                result.claims.append({"key": f"public.social_profile:{hashlib.sha256(absolute.encode()).hexdigest()[:12]}", "field": "public.social_profile", "value": absolute, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("career", "karriere", "jobb", "jobs")):
             result.claims.append({"key": f"hiring.careers_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "hiring.careers_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("news", "aktuelt", "nyheter", "blog", "press")):

@@ -10,12 +10,18 @@ class SynthesisTests(unittest.TestCase):
             {"field": "company.legal_form", "value": "AS", "availability": "available", "evidence_ids": ["registry"]},
             {"field": "company.industry_primary", "value": {"beskrivelse": "Software"}, "availability": "available", "evidence_ids": ["registry"]},
             {"field": "company.business_address", "value": {"kommune": "OSLO"}, "availability": "available", "evidence_ids": ["registry"]},
+            {"field": "company.activity", "value": "Develops software for shipping", "availability": "available", "evidence_ids": ["registry"]},
             {"field": "financial.revenue", "value": 1000000, "reporting_period": "2025", "availability": "available", "evidence_ids": ["accounts"]},
+            {"field": "financial.revenue", "value": 800000, "reporting_period": "2024", "availability": "available", "evidence_ids": ["accounts"]},
+            {"field": "financial.revenue", "value": 600000, "reporting_period": "2023", "availability": "available", "evidence_ids": ["accounts"]},
             {"field": "website.official", "value": None, "availability": "not_available", "evidence_ids": []},
         ]
         result = build_synthesis("123456789", claims, [{"claim_key": "financial.revenue"}])
         self.assertIn("Software", result["overview"])
+        self.assertIn("Develops software for shipping", result["overview"])
         self.assertIn("1,000,000 NOK", result["financial_summary"])
+        self.assertIn("800,000 NOK", result["financial_summary"])
+        self.assertIn("600,000 NOK", result["financial_summary"])
         self.assertIn("financial.revenue", result["change_summary"])
         self.assertIn("website.official", result["unknown_summary"])
         self.assertEqual(result["evidence_ids"], ["accounts", "registry"])
