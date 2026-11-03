@@ -54,6 +54,24 @@ class WebsiteTests(unittest.TestCase):
         result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=1)
         self.assertIn("website.official", {c["field"] for c in result.claims})
 
+    def test_registry_acronym_domain_accepts_full_homepage_name(self):
+        registry = {"navn": "Den Nationale Scene AS", "hjemmeside": "https://dns.no"}
+        page = '<title>Den Nationale Scene</title><h1>Den Nationale Scene</h1>'
+        result = crawl_verified_website("123456789", registry, FakeClient({"https://dns.no": page}), max_pages=1)
+        self.assertIn("website.official", {c["field"] for c in result.claims})
+
+    def test_registry_site_can_use_its_own_footer_number_with_brand_heading(self):
+        page = '<h1>Our brand</h1><footer>Org nr 123 456 789</footer>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": page}), max_pages=1)
+        self.assertIn("website.official", {c["field"] for c in result.claims})
+
+    def test_social_platform_listing_is_not_company_owned_website(self):
+        registry = {"navn": "Example Company AS", "hjemmeside": "https://www.facebook.com/examplecompany"}
+        client = FakeClient({"https://www.facebook.com/examplecompany": '<h1>Example Company AS</h1>'})
+        result = crawl_verified_website("123456789", registry, client, max_pages=1)
+        self.assertFalse(result.claims)
+        self.assertEqual(client.calls, [])
+
     def test_norwegian_letter_matches_registry_listed_domain(self):
         registry = {"navn": "AUTOBJØRN AS", "hjemmeside": "https://autobjorn.no"}
         pages = {"https://autobjorn.no": '<title>Autobjørn AS</title><h1>Autobjørn AS</h1>'}
@@ -92,6 +110,31 @@ class WebsiteTests(unittest.TestCase):
         home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><footer><a href="https://www.linkedin.com/company/examplecompany">LinkedIn</a><a href="https://www.linkedin.com/company/examplecompanygroup">Group</a><a href="https://facebook.com/webagency">Agency</a></footer>'
         result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home}), max_pages=1)
         self.assertEqual([c["value"] for c in result.claims if c["field"] == "public.social_profile"], ["https://www.linkedin.com/company/examplecompany"])
+
+    def test_footer_social_url_is_canonicalized_without_tracking_query(self):
+        home = '<h1>Example Company AS</h1><footer>Org nr 123 456 789 <a href="https://www.instagram.com/examplecompany/?hl=nb">Instagram</a></footer>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home}), max_pages=1)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "public.social_profile"], ["https://www.instagram.com/examplecompany"])
+
+    def test_dated_generic_article_on_company_press_page_is_news(self):
+        home = '<h1>Example Company AS</h1><footer>Org nr 123 456 789</footer><a href="/press">Press</a>'
+        listing = '<a href="/pressemelding-project/">Example Company announces a new project</a>'
+        article = '<script type="application/ld+json">{"@type":"Article","headline":"Example Company announces a new project","mainEntityOfPage":{"@id":"https://example.no/pressemelding-project/"},"datePublished":"2026-10-01"}</script><h1>Example Company announces a new project</h1><div class="entry-content"><p>Example Company AS is opening a new project in Oslo.</p></div>'
+        pages = {"https://example.no": home, "https://example.no/press": listing, "https://example.no/pressemelding-project/": article}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=4)
+        self.assertEqual([c["value"]["url"] for c in result.claims if c["field"] == "public.activity_item"], ["https://example.no/pressemelding-project/"])
+
+    def test_homepage_news_card_can_discover_dated_article(self):
+        home = '<h1>Example Company AS</h1><footer>Org nr 123 456 789</footer><a class="post-card" href="/new-project/">Example Company opens a new project</a>'
+        article = '<meta property="article:published_time" content="2026-10-01"><article><h1>Example Company opens a new project</h1><p>Example Company AS opened a new project in Oslo.</p></article>'
+        pages = {"https://example.no": home, "https://example.no/new-project/": article}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=2)
+        self.assertEqual([c["value"]["url"] for c in result.claims if c["field"] == "public.activity_item"], ["https://example.no/new-project/"])
+
+    def test_dated_product_article_is_not_company_news(self):
+        document = '<script type="application/ld+json">{"@type":"Article","headline":"Example Company launches widget","mainEntityOfPage":{"@id":"https://example.no/products/widget"},"datePublished":"2026-10-01"}</script><div class="entry-content">Example Company AS sells a widget.</div>'
+        fetch = Fetch("https://example.no/products/widget", 200, document, document.encode(), "2026-10-15T00:00:00Z")
+        self.assertFalse([c for c in _structured_claims(fetch, "ev-1", "123456789", REGISTRY, "https://example.no") if c["field"] == "public.activity_item"])
 
     def test_dated_html_news_article_with_company_name_is_published(self):
         home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'

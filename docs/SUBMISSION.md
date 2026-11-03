@@ -26,11 +26,11 @@ python -m signalpost run --organisations evaluator-companies.jsonl --output out/
 - No model, paid API, personal credential, external cache or restricted-platform scraper
 - Expected third-party cost per official run: $0
 - Install step from a clean checkout: `python -m pip install .`. No personal credentials or runtime packages are required.
-- Expected request count: one bounded shared support-snapshot request, run concurrently with budget-adaptive official/company-owned modules. The default 17,000-request ceiling leaves headroom for the current 1,000-company batch and can be lowered to match an evaluator-supplied ceiling. Use optional `--bulk PATH` only when Builderr supplies that snapshot.
+- Expected request count: one bounded shared support-snapshot request, with one budgeted retry only for an initial connection failure, run concurrently with budget-adaptive official/company-owned modules. The default 17,000-request ceiling leaves headroom for the current 1,000-company batch and can be lowered to match an evaluator-supplied ceiling. Use optional `--bulk PATH` only when Builderr supplies that snapshot.
 
 ## Smoke result
 
-`reports/smoke-300-v18-report.json` and `reports/smoke-300-v18-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,381 supported claims including 12 verified company sites, two dated news items, two exact-account social profiles and 12 recent official support awards, used 1,724 requests, cost $0, completed in 98.2 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
+`reports/smoke-300-v22-report.json` and `reports/smoke-300-v22-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,387 supported claims including 16 verified company sites, four dated news items, four exact-account social profiles and 10 recent official support awards, used 1,823 requests, cost $0, completed in 176.8 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
 
 ## External actions remaining
 

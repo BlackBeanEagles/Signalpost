@@ -116,7 +116,10 @@ def _tokens(value: Any) -> list[str]:
 def _candidate_homepages(registry: dict[str, Any]) -> list[str]:
     supplied = str(registry.get("hjemmeside") or "").strip()
     if supplied:
-        return [supplied if "://" in supplied else "https://" + supplied]
+        candidate = supplied if "://" in supplied else "https://" + supplied
+        if (urllib.parse.urlparse(candidate).hostname or "").casefold() in SOCIAL_HOSTS:
+            return []
+        return [candidate]
     tokens = _tokens(registry.get("navn"))
     compact = "".join(tokens)
     hyphenated = "-".join(tokens)
@@ -144,28 +147,45 @@ def _other_legal_name(heading: str, name: str) -> bool:
     return bool(expected and suffixes and words[max(0, suffixes[-1] - len(expected)):suffixes[-1]] != expected)
 
 
-def _verified(text: str, orgnr: str, registry: dict[str, Any], heading: str = "", site_url: str = "") -> tuple[bool, str]:
+def _site_numbers(text: str, orgnr: str) -> set[str]:
+    distinct = set()
+    for match in re.finditer(r"(?<!\d)\d(?:[\s.\-]*\d){8}(?!\d)", text):
+        digits = _digits(match.group())
+        context = text[max(0, match.start() - 35):match.start()].casefold()
+        if digits == orgnr or (is_valid_orgnr(digits) and re.search(r"(?:org(?:anis(?:ation|asjon))?\.?\s*(?:nr|number|nummer)?|mva|vat)\W*$", context)):
+            distinct.add(digits)
+    return distinct
+
+
+def _verified(text: str, orgnr: str, registry: dict[str, Any], heading: str = "", site_url: str = "", homepage_text: str = "") -> tuple[bool, str]:
     # A footer can list many subsidiaries. A number there cannot establish that the
     # whole site belongs to one of them when the page presents another identity.
-    if not heading or not _name_match(heading, str(registry.get("navn") or "")):
+    name = str(registry.get("navn") or "")
+    heading_matches = _name_match(heading, name)
+    homepage_has_org = orgnr in _site_numbers(homepage_text, orgnr)
+    if not heading or not (heading_matches or homepage_has_org):
         return False, "Homepage title/heading does not identify this legal entity."
     if re.search(r"\b(?:group|konsern|konsernet)\b", heading.casefold()) and not re.search(r"\b(?:group|konsern)\b", str(registry.get("navn") or "").casefold()):
         return False, "Homepage presents a parent group rather than this entity."
     if _other_legal_name(heading, str(registry.get("navn") or "")):
         return False, "Homepage names a different legal company."
-    number_matches = re.finditer(r"(?<!\d)\d(?:[\s.\-]*\d){8}(?!\d)", text)
-    distinct = set()
-    for match in number_matches:
-        digits = _digits(match.group())
-        context = text[max(0, match.start() - 35):match.start()].casefold()
-        if digits == orgnr or (is_valid_orgnr(digits) and re.search(r"(?:org(?:anis(?:ation|asjon))?\.?\s*(?:nr|number|nummer)?|mva|vat)\W*$", context)):
-            distinct.add(digits)
+    distinct = _site_numbers(text, orgnr)
     if len(distinct) > 1:
         return False, "Homepage identifies multiple legal entities."
     if orgnr in distinct:
+        if not heading_matches and not registry.get("hjemmeside"):
+            host = (urllib.parse.urlparse(site_url).hostname or "").casefold().removeprefix("www.")
+            if host.split(".", 1)[0].replace("-", "") != "".join(_tokens(name)):
+                return False, "Discovered domain does not match the company identity."
         return True, f"Page displays organisation number {orgnr}."
     if distinct:
         return False, "Homepage displays another organisation number."
+    if registry.get("hjemmeside") and site_url:
+        expected = _tokens(name)
+        actual = _tokens(heading)
+        full_name = bool(expected) and any(actual[index:index + len(expected)] == expected for index in range(len(actual) - len(expected) + 1))
+        if full_name:
+            return True, "Homepage displays the full company name on its registry-listed site."
     if not registry.get("hjemmeside") and site_url:
         legal_words = re.findall(r"[a-z0-9]+", _ascii(registry.get("navn")))
         heading_words = re.findall(r"[a-z0-9]+", _ascii(heading))
@@ -235,6 +255,11 @@ def _company_social_account(url: str, registry: dict[str, Any]) -> bool:
     return bool(any(len(word) >= 4 for word in name_tokens) and slug == "".join(name_tokens))
 
 
+def _canonical_social_url(url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    return urllib.parse.urlunparse((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), "", "", ""))
+
+
 def _exact_organization(node: Any, orgnr: str, registry: dict[str, Any], site: str) -> bool:
     if not isinstance(node, dict):
         return False
@@ -261,6 +286,16 @@ def _published_date(value: Any, retrieved_at: str) -> str | None:
     return value if published <= retrieved else None
 
 
+def _article_body(document: str) -> str:
+    sections = re.findall(r"<(?:article|main)\b[^>]*>(.*?)</(?:article|main)>", document, re.I | re.S)
+    sections += re.findall(r"<(?:div|section)\b[^>]*class=[\"'][^\"']*(?:entry-content|post-content|article-content|content__body)[^\"']*[\"'][^>]*>(.*?)</(?:div|section)>", document, re.I | re.S)
+    cleaned = []
+    for section in sections[:4]:
+        section = re.sub(r"<(?:script|style)\b[^>]*>.*?</(?:script|style)>", " ", section, flags=re.I | re.S)
+        cleaned.append(html.unescape(re.sub(r"<[^>]+>", " ", section)))
+    return " ".join(cleaned)[:50000]
+
+
 def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dict[str, Any], site: str, from_news_listing: bool = False) -> list[dict[str, Any]]:
     claims: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -285,20 +320,19 @@ def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dic
             same_as = node.get("sameAs")
             for url in same_as if isinstance(same_as, list) else [same_as]:
                 if _company_social_account(str(url or ""), registry):
-                    add("public.social_profile", str(url))
-        if kinds & {"NewsArticle", "BlogPosting", "PressRelease"} or (from_news_listing and "Article" in kinds):
+                    add("public.social_profile", _canonical_social_url(str(url)))
+        if kinds & {"NewsArticle", "BlogPosting", "PressRelease", "Article"}:
             headline = node.get("headline") or node.get("name")
-            url = node.get("url") or node.get("mainEntityOfPage")
+            url = node.get("url") or node.get("mainEntityOfPage") or node.get("@id")
             if isinstance(url, dict):
                 url = url.get("@id")
-            absolute = urllib.parse.urljoin(fetch.url, str(url or ""))
+            parsed_url = urllib.parse.urlparse(urllib.parse.urljoin(fetch.url, str(url or "")))
+            absolute = urllib.parse.urlunparse((parsed_url.scheme, parsed_url.netloc, parsed_url.path, "", "", ""))
             article_path = urllib.parse.urlparse(absolute).path.casefold()
             article_path_ok = any(word in article_path for word in ("news", "nyheter", "aktuelt", "article", "artikkel", "blog", "press"))
             published = _published_date(node.get("datePublished"), fetch.retrieved_at)
             article_text = " ".join(str(node.get(key) or "") for key in ("articleBody", "description", "about"))
-            main = re.search(r"<(?:article|main)\b[^>]*>(.*?)</(?:article|main)>", str(fetch.body or ""), flags=re.I | re.S)
-            main_text = re.sub(r"<[^>]+>", " ", re.sub(r"<script\b[^>]*>.*?</script>", " ", main.group(1), flags=re.I | re.S)) if main else ""
-            about_company = _name_match(article_text + " " + main_text, str(registry.get("navn") or ""))
+            about_company = _name_match(article_text + " " + _article_body(str(fetch.body or "")), str(registry.get("navn") or ""))
             if headline and len(str(headline).strip()) >= 12 and url and published and (article_path_ok or from_news_listing) and _in_site_scope(absolute, site) and absolute.rstrip("/") == fetch.url.rstrip("/") and about_company:
                 add("public.activity_item", {"title": str(headline)[:300], "url": absolute, "published_at": published})
         if "JobPosting" in kinds:
@@ -355,7 +389,8 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             candidate_heading = " ".join(candidate_parser.headings)
             candidate_title = " ".join(candidate_parser.title)
             displayed = candidate_heading if _name_match(candidate_heading, str(registry.get("navn") or "")) else candidate_title
-            if not _name_match(displayed, str(registry.get("navn") or "")) or _other_legal_name(candidate_heading, str(registry.get("navn") or "")):
+            homepage_has_org = orgnr in _site_numbers(" ".join(candidate_parser.text), orgnr)
+            if not (_name_match(displayed, str(registry.get("navn") or "")) or homepage_has_org) or _other_legal_name(candidate_heading, str(registry.get("navn") or "")):
                 last_error = "ambiguous identity"
                 continue
             first = candidate
@@ -368,8 +403,9 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     assert parser is not None
     primary_heading = " ".join(parser.headings)
     title = " ".join(parser.title)
-    heading = primary_heading if _name_match(primary_heading, str(registry.get("navn") or "")) else title
-    if re.search(r"\b(?:group|konsern|konsernet)\b", primary_heading.casefold()) or _other_legal_name(primary_heading, str(registry.get("navn") or "")) or not _name_match(heading, str(registry.get("navn") or "")):
+    heading = primary_heading if _name_match(primary_heading, str(registry.get("navn") or "")) or not title else title
+    homepage_has_org = orgnr in _site_numbers(" ".join(parser.text), orgnr)
+    if re.search(r"\b(?:group|konsern|konsernet)\b", primary_heading.casefold()) or _other_legal_name(primary_heading, str(registry.get("navn") or "")) or not (_name_match(heading, str(registry.get("navn") or "")) or homepage_has_org):
         result.errors.append({"module": "website", "message": "ambiguous identity", "detail": "Homepage does not identify the exact company."})
         return result
     pages = [(first, parser)]
@@ -384,8 +420,9 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     # Many small-company sites omit useful navigation from the homepage or render it with
     # JavaScript. Probe a bounded set of conventional same-origin paths; publication still
     # requires the exact-entity gate below and a successful page response.
+    common_path_limit = max(0, max_pages - (2 if parser.news_links else 1))
     for path in COMMON_PATHS:
-        if len(candidates) >= max(0, max_pages - 1):
+        if len(candidates) >= common_path_limit:
             break
         guessed = urllib.parse.urljoin(first.url.rstrip("/") + "/", path.lstrip("/"))
         if guessed not in candidates:
@@ -400,7 +437,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             break
         if fetch.status == 200 and isinstance(fetch.body, str) and _in_site_scope(fetch.url, first.url):
             page = PageParser(); page.feed(fetch.body); pages.append((fetch, page))
-    verified, proof = _verified(" ".join(" ".join(page.text) for _, page in pages), orgnr, registry, heading=heading, site_url=first.url)
+    verified, proof = _verified(" ".join(" ".join(page.text) for _, page in pages), orgnr, registry, heading=heading, site_url=first.url, homepage_text=" ".join(parser.text))
     if not verified:
         result.errors.append({"module": "website", "message": "ambiguous identity", "detail": proof})
         return result
@@ -410,7 +447,8 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     for fetch, page in list(pages):
         if attempts >= max_pages:
             break
-        if not any(word in urllib.parse.urlparse(fetch.url).path.casefold() for word in ("news", "aktuelt", "nyheter", "blog", "press")):
+        news_listing_path = any(word in urllib.parse.urlparse(fetch.url).path.casefold() for word in ("news", "aktuelt", "nyheter", "blog", "press"))
+        if not news_listing_path and not (fetch.url == first.url and page.news_links):
             continue
         for href, label in [(href, "News article") for href in page.news_links] + page.links:
             if attempts >= max_pages:
@@ -462,7 +500,8 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         for href in page.footer_links:
             absolute = urllib.parse.urljoin(fetch.url, href)
             if _company_social_account(absolute, registry):
-                result.claims.append({"key": f"public.social_profile:{hashlib.sha256(absolute.encode()).hexdigest()[:12]}", "field": "public.social_profile", "value": absolute, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
+                account_url = _canonical_social_url(absolute)
+                result.claims.append({"key": f"public.social_profile:{hashlib.sha256(account_url.encode()).hexdigest()[:12]}", "field": "public.social_profile", "value": account_url, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("career", "karriere", "jobb", "jobs")):
             result.claims.append({"key": f"hiring.careers_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "hiring.careers_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("news", "aktuelt", "nyheter", "blog", "press")):

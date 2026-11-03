@@ -3,6 +3,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+from urllib.error import URLError
 
 from signalpost.budget import Budget
 from signalpost.support import attach_support, fetch_support_awards
@@ -24,6 +25,19 @@ class FakeResponse:
 
 
 class SupportTests(unittest.TestCase):
+    def test_connection_failure_gets_one_budgeted_retry(self):
+        awarded = datetime.now(timezone.utc).date().strftime("%d.%m.%Y")
+        raw = ('"Organisasjonsnummer støttemottaker";"Tildelingsdato";"Tildelt beløp"\r\n'
+               f'"923609016";"{awarded}";"0"\r\n').encode("utf-16-le")
+        budget = Budget()
+        with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
+            with patch("signalpost.support.urllib.request.urlopen", side_effect=[URLError("handshake"), FakeResponse(raw)]) as opener:
+                awards, metadata = fetch_support_awards({"923609016"}, budget, Path(directory), total_timeout=30)
+        self.assertEqual(opener.call_count, 2)
+        self.assertEqual(budget.requests, 2)
+        self.assertEqual(metadata["status"], "available")
+        self.assertEqual(awards["923609016"][0]["value"]["amount"], "0")
+
     def test_partial_utf16_download_keeps_only_complete_exact_recipient_rows(self):
         awarded = (datetime.now(timezone.utc).date() - timedelta(days=7)).strftime("%d.%m.%Y")
         header = '"Støttetiltaksnummer";"Organisasjonsnummer støttemottaker";"Tildelingsdato";"Tildelt beløp";"Tildelt beløp valuta";"Navn støttemottaker";"Navn støttegiver"\r\n'

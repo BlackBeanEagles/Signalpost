@@ -124,7 +124,14 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
         with tempfile.NamedTemporaryFile("wb", delete=False, dir=directory, prefix="support-", suffix=".csv") as handle:
             temporary_path = Path(handle.name)
             request = urllib.request.Request(URL, headers={"User-Agent": "SignalPost/2.0"})
-            with urllib.request.urlopen(request, timeout=10) as response:
+            try:
+                response_handle = urllib.request.urlopen(request, timeout=10)
+            except (urllib.error.URLError, TimeoutError):
+                if time.perf_counter() - started >= total_timeout - 10:
+                    raise
+                budget.reserve()
+                response_handle = urllib.request.urlopen(request, timeout=10)
+            with response_handle as response:
                 while True:
                     if time.perf_counter() - started > total_timeout:
                         partial_reason = "transfer_deadline"

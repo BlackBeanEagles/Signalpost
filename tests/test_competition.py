@@ -7,9 +7,44 @@ from unittest.mock import patch
 from signalpost.competition import plan_modules, read_inputs, run_official_batch
 from signalpost.evaluator import validate_envelopes
 from signalpost.bulk import read_bulk_selected
+from signalpost.website import WebsiteResult
 
 
 class CompetitionTests(unittest.TestCase):
+    def test_registry_listed_site_recovers_after_dns_failure(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
+            root = Path(directory)
+            input_path = root / "input.jsonl"
+            input_path.write_text('{"organisation_number":"923609016"}\n', encoding="utf-8")
+            registry_url = "https://data.brreg.no/enhetsregisteret/api/enheter/923609016"
+            row = {
+                "organisation_number": "923609016", "availability": "available",
+                "run": {"run_id": "retry-site", "completed_at": "2026-11-03T00:00:00Z"},
+                "claims": [
+                    {"key": "company.legal_name", "field": "company.legal_name", "value": "Example Company AS", "availability": "available", "evidence_ids": ["registry"]},
+                    {"key": "company.website_candidate", "field": "company.website_candidate", "value": "https://example.no", "availability": "available", "evidence_ids": ["registry"]},
+                    {"key": "website.official", "field": "website.official", "value": None, "availability": "ambiguous", "evidence_ids": []},
+                ],
+                "evidence": [{"id": "registry", "source_url": registry_url, "content_sha256": "a" * 64, "retrieved_at": "2026-11-03T00:00:00Z"}],
+                "source_snapshots": [{"source_url": registry_url, "status": 200, "content_sha256": "a" * 64, "retrieved_at": "2026-11-03T00:00:00Z"}],
+                "changes": [], "synthesis": {}, "errors": [{"module": "website", "message": "gaierror"}],
+                "operations": {"requests": 1, "runtime_ms": 1, "third_party_cost_usd": 0.0},
+            }
+            site = WebsiteResult(
+                claims=[{"key": "website.official", "field": "website.official", "value": "https://example.no", "availability": "available", "evidence_ids": ["site"]}],
+                evidence=[{"id": "site", "source_url": "https://example.no", "content_sha256": "b" * 64, "retrieved_at": "2026-11-03T00:00:00Z"}],
+                snapshots=[{"source_url": "https://example.no", "status": 200, "content_sha256": "b" * 64, "retrieved_at": "2026-11-03T00:00:00Z"}],
+            )
+            support = {"status": "partial", "retrieved_at": "2026-11-03T00:00:00Z", "snapshot_sha256": "c" * 64, "complete_snapshot": False}
+            with patch("signalpost.competition.research_company", return_value=row), patch("signalpost.competition.crawl_verified_website", return_value=site) as retry, patch("signalpost.competition.fetch_support_awards", return_value=({}, support)):
+                report = run_official_batch(input_path, root / "output.jsonl", root / "report.json", root / "state.sqlite3", "retry-site", workers=1, max_requests=100)
+            output = json.loads((root / "output.jsonl").read_text(encoding="utf-8"))
+            self.assertEqual(retry.call_count, 1)
+            self.assertEqual(retry.call_args.kwargs["max_pages"], report["website_page_budget_per_company"] - 1)
+            self.assertEqual(report["failed"], 0)
+            self.assertEqual([claim["value"] for claim in output["claims"] if claim["field"] == "website.official"], ["https://example.no"])
+            self.assertFalse([error for error in output["errors"] if error.get("module") == "website"])
+
     def test_transient_registry_failure_gets_one_retry(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
             root = Path(directory)

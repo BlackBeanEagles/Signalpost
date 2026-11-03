@@ -14,6 +14,7 @@ from .sources import HttpClient, now
 from .state import StateStore
 from .bulk import read_bulk_selected
 from .support import attach_support, fetch_support_awards
+from .website import crawl_verified_website
 
 
 def read_inputs(path: Path) -> list[str]:
@@ -128,6 +129,45 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
                         continue
                     if retried["availability"] != "failed":
                         indexed[retries[future]] = retried
+        website_retry_indices = []
+        for index in sorted(indexed):
+            row = indexed[index]
+            if website_pages < 2 or row["availability"] != "available" or not any(error.get("module") == "website" and error.get("message") in {"gaierror", "URLError", "TimeoutError"} for error in row.get("errors", [])):
+                continue
+            if any(claim.get("field") == "company.website_candidate" and claim.get("availability") == "available" for claim in row["claims"]):
+                website_retry_indices.append(index)
+        website_retry_indices = website_retry_indices[:32]
+        if website_retry_indices:
+            def retry_website(index: int):
+                row = indexed[index]
+                values = {claim["field"]: claim["value"] for claim in row["claims"] if claim.get("availability") == "available" and claim.get("field") in {"company.legal_name", "company.website_candidate"}}
+                registry = {"navn": values["company.legal_name"], "hjemmeside": values["company.website_candidate"]}
+                company_client = HttpClient(budget)
+                started_retry = time.perf_counter()
+                # The first pass attempted only the registry-listed homepage.
+                # Spend at most the remaining per-company website page budget.
+                website = crawl_verified_website(row["organisation_number"], registry, company_client, max_pages=website_pages - 1, max_discovery_candidates=1)
+                return index, website, company_client.requests, round((time.perf_counter() - started_retry) * 1000)
+
+            recovered_count = 0
+            with ThreadPoolExecutor(max_workers=min(8, len(website_retry_indices))) as retry_executor:
+                retries = [retry_executor.submit(retry_website, index) for index in website_retry_indices]
+                for future in as_completed(retries):
+                    try:
+                        index, website, requests, runtime_ms = future.result()
+                    except Exception:
+                        continue
+                    row = indexed[index]
+                    row["operations"]["requests"] += requests
+                    row["operations"]["runtime_ms"] += runtime_ms
+                    if not any(claim.get("field") == "website.official" and claim.get("availability") == "available" for claim in website.claims):
+                        continue
+                    row["claims"] = [claim for claim in row["claims"] if claim.get("field") != "website.official"] + website.claims
+                    row["evidence"].extend(website.evidence)
+                    row["source_snapshots"].extend(website.snapshots)
+                    row["errors"] = [error for error in row["errors"] if error.get("module") != "website"]
+                    recovered_count += 1
+            print(f"Recovered {recovered_count}/{len(website_retry_indices)} registry-listed website(s) on retry", file=sys.stderr, flush=True)
         support_awards, support_report = support_future.result()
     rows = [indexed[index] for index in range(len(inputs))]
     for row in rows:
