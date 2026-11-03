@@ -214,7 +214,7 @@ def build_synthesis(orgnr: str, claims: list[dict[str, Any]], changes: list[dict
     }
 
 
-def research_company(org_value: str, client: HttpClient, budget: Budget, store: StateStore | None, run_id: str, registry_payload: dict[str, Any] | None = None, registry_bulk_hash: str | None = None, modules: set[str] | None = None, website_pages: int = 0) -> dict[str, Any]:
+def research_company(org_value: str, client: HttpClient, budget: Budget, store: StateStore | None, run_id: str, registry_payload: dict[str, Any] | None = None, registry_bulk_hash: str | None = None, modules: set[str] | None = None, website_pages: int = 0, discovery_candidates: int = 3) -> dict[str, Any]:
     started = now()
     clock = time.perf_counter()
     try:
@@ -268,12 +268,12 @@ def research_company(org_value: str, client: HttpClient, budget: Budget, store: 
                 availability = "blocked" if status in {401, 403, 429} else "failed" if status not in {200, 404, 410} else "not_available"
                 claims.append({"key": family, "field": family, "value": None, "availability": availability, "confidence": 1.0, "evidence_ids": [module_evidence[module]]})
     if "website" in enabled and website_pages > 0:
-        website = crawl_verified_website(orgnr, registry.body, client, max_pages=website_pages)
+        website = crawl_verified_website(orgnr, registry.body, client, max_pages=website_pages, max_discovery_candidates=discovery_candidates)
         claims.extend(website.claims); evidence.extend(website.evidence); snapshots.extend(website.snapshots); errors.extend(website.errors)
         if not website.claims:
             claims.append({"key": "website.official", "field": "website.official", "value": None, "availability": "ambiguous" if registry.body.get("hjemmeside") else "not_available", "confidence": 1.0, "evidence_ids": [], "note": "No exact-identity company website was verified."})
     completed = now()
-    changes = store.apply(orgnr, claims, evidence, completed) if store else []
+    changes = store.apply(orgnr, claims, evidence, completed, source_snapshots=snapshots) if store else []
     return terminal_envelope(orgnr, run_id, started, claims, evidence, snapshots, changes, errors, clock, budget, "available")
 
 

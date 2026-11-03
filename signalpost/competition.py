@@ -1,6 +1,7 @@
 import json
 import re
 import statistics
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -64,7 +65,7 @@ def plan_modules(company_count: int, max_requests: int, bulk_identity: bool) -> 
     for module in ("financials", "roles"):
         if remaining:
             enabled_modules.add(module); remaining -= 1
-    website_pages = min(5, remaining)
+    website_pages = min(4 if company_count >= 500 else 5, remaining)
     if website_pages:
         enabled_modules.add("website"); remaining -= website_pages
     for module in ("locations", "group"):
@@ -88,13 +89,14 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     # prefix concurrently so the support source does not serially delay the run.
     budget.reserve()
     enabled_modules, website_pages = plan_modules(len(inputs), max_requests, bulk_path is not None)
+    discovery_candidates = 1 if len(inputs) >= 500 else 3
     indexed: dict[int, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=1) as support_executor:
         support_future = support_executor.submit(fetch_support_awards, set(inputs), budget, state_path.parent, budget_reserved=True)
         with ThreadPoolExecutor(max_workers=workers) as executor:
             def enrich(value: str) -> dict[str, Any]:
                 company_client = HttpClient(budget)
-                row = research_company(value, company_client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages)
+                row = research_company(value, company_client, budget, None, run_id, bulk_records.get(value, {}) if bulk_path else None, bulk_hash, enabled_modules, website_pages, discovery_candidates)
                 row["operations"]["requests"] = company_client.requests
                 return row
 
@@ -112,6 +114,20 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
                         "errors": [{"code": "unhandled_company_error", "message": type(exc).__name__}],
                         "operations": {"requests": 0, "runtime_ms": 0, "third_party_cost_usd": 0.0},
                     }
+                if len(indexed) % 100 == 0 or len(indexed) == len(inputs):
+                    print(f"Processed {len(indexed)}/{len(inputs)} companies", file=sys.stderr, flush=True)
+        retry_indices = [index for index, row in indexed.items() if row["availability"] == "failed" and any(error.get("module") == "registry" and error.get("message") in {"URLError", "TimeoutError", "timeout"} for error in row.get("errors", []))]
+        if retry_indices:
+            print(f"Retrying {len(retry_indices)} transient registry failure(s)", file=sys.stderr, flush=True)
+            with ThreadPoolExecutor(max_workers=min(4, len(retry_indices))) as retry_executor:
+                retries = {retry_executor.submit(enrich, inputs[index]): index for index in retry_indices}
+                for future in as_completed(retries):
+                    try:
+                        retried = future.result()
+                    except Exception:
+                        continue
+                    if retried["availability"] != "failed":
+                        indexed[retries[future]] = retried
         support_awards, support_report = support_future.result()
     rows = [indexed[index] for index in range(len(inputs))]
     for row in rows:
@@ -120,7 +136,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     try:
         for row in rows:
             if row["availability"] == "available":
-                row["changes"] = store.apply(row["organisation_number"], row["claims"], row["evidence"], row["run"]["completed_at"])
+                row["changes"] = store.apply(row["organisation_number"], row["claims"], row["evidence"], row["run"]["completed_at"], source_snapshots=row["source_snapshots"], support_snapshot_complete=support_report.get("complete_snapshot") is True)
                 row["synthesis"] = build_synthesis(row["organisation_number"], row["claims"], row["changes"])
     finally:
         store.close()
@@ -148,6 +164,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
         "bulk_registry_snapshot": str(bulk_path) if bulk_path else None,
         "enabled_modules": sorted(enabled_modules),
         "website_page_budget_per_company": website_pages,
+        "website_discovery_candidates_per_company": discovery_candidates,
         "support_registry": support_report,
     }
     report_path.parent.mkdir(parents=True, exist_ok=True)

@@ -323,9 +323,11 @@ def _html_article_claim(fetch: Fetch, page: PageParser, registry: dict[str, Any]
     return {"key": f"public.activity_item:{hashlib.sha256(identity.encode()).hexdigest()[:12]}", "field": "public.activity_item", "value": value, "availability": "available", "confidence": 0.95}
 
 
-def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpClient, max_pages: int = 5) -> WebsiteResult:
+def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpClient, max_pages: int = 5, max_discovery_candidates: int = 3) -> WebsiteResult:
     result = WebsiteResult()
     home_candidates = _candidate_homepages(registry)
+    if not registry.get("hjemmeside"):
+        home_candidates = home_candidates[:max_discovery_candidates]
     if not home_candidates:
         return result
     attempts = 0

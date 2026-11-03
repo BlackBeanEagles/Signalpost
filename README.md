@@ -4,10 +4,10 @@ Competition-ready, evidence-first research for Norwegian companies. The evaluato
 
 ## Evaluator command
 
-Python 3.10+ is the only runtime requirement. There are no runtime packages or personal credentials.
+Python 3.10+ is the only runtime requirement. There are no runtime packages or personal credentials. From a clean checkout, install with `python -m pip install .`.
 
 ```bash
-python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
+python -m signalpost run --organisations evaluator-companies.jsonl --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
 ```
 
 Audit the result:
@@ -24,7 +24,7 @@ python -m signalpost product --envelopes out/envelopes.jsonl --output out/signal
 
 ## Coverage
 
-For every valid organisation number the agent queries five official Norwegian sources:
+For every valid organisation number the agent queries the official Norwegian registry and, within the request budget, these sources:
 
 - Enhetsregisteret identity and company details;
 - Regnskapsregisteret financial statements;
@@ -33,7 +33,7 @@ For every valid organisation number the agent queries five official Norwegian so
 - official registered workplaces/subunits.
 - recent Støtteregisteret awards found in a bounded shared download, with exact primary-recipient matching and explicit partial-snapshot status.
 
-The frozen bulk registry snapshot is used for identity without consuming outbound requests. The runner automatically chooses the highest-value additional modules that fit the batch size and `--max-requests` budget, so a growing official batch still returns every required envelope.
+When Builderr supplies a frozen bulk registry snapshot, pass it with the optional `--bulk PATH` argument to anchor identity without consuming outbound requests. The command above works with only the supplied company batch. The runner chooses the highest-value additional modules that fit the batch size and `--max-requests` budget. For batches of at least 500 companies it bounds website discovery to one exact-name `.no` candidate and four total website requests per company, so a growing batch remains tractable.
 
 Claims include legal identity, industry, addresses, employees, contact details, business purpose, filing status, financial results across reporting periods, management and board roles, group relationships, and workplaces. Missing, blocked and failed modules are explicit; missing values are never changed to zero.
 
@@ -50,7 +50,7 @@ Claims include legal identity, industry, addresses, employees, contact details, 
 
 ## Refresh
 
-SQLite state stores immutable source snapshots, claim history and current values. Replaying the same data creates no false changes. Added, updated and removed claims carry earlier and current evidence references.
+SQLite state stores immutable source snapshots, claim history and current values. Replaying the same data creates no false changes. Added, updated and removed claims carry earlier and current evidence references. Temporarily blocked sources, bounded website crawls and partial support downloads do not imply that earlier facts were removed.
 
 ## Smoke-test result
 
@@ -72,7 +72,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 40 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, Norwegian-name discovery, and partial UTF-16 support-registry regression cases.
+The current suite contains 43 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, Norwegian-name discovery, large-batch discovery bounds, transient-registry recovery, partial-source refresh, and partial UTF-16 support-registry regression cases.
 
 ## Source rights and operations
 

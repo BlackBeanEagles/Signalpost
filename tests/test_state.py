@@ -6,6 +6,28 @@ from signalpost.state import StateStore
 
 
 class StateTests(unittest.TestCase):
+    def test_partial_or_blocked_sources_do_not_create_false_removals(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
+            store = StateStore(Path(directory) / "state.sqlite3")
+            original = [
+                {"key": "company.phone", "value": "12345678", "availability": "available", "evidence_ids": ["registry"]},
+                {"key": "people.official_role:chair", "value": {"name": "A"}, "availability": "available", "evidence_ids": ["roles"]},
+                {"key": "website.official", "value": "https://example.no", "availability": "available", "evidence_ids": ["site"]},
+                {"key": "official.support_award:one", "value": {"amount": 1}, "availability": "available", "evidence_ids": ["support"]},
+            ]
+            store.apply("923609016", original, [], "t1", source_snapshots=[])
+            snapshots = [
+                {"source_url": "https://data.brreg.no/enhetsregisteret/api/enheter/923609016", "status": 200},
+                {"source_url": "https://data.brreg.no/enhetsregisteret/api/enheter/923609016/roller", "status": 429},
+            ]
+            changes = store.apply("923609016", [], [], "t2", source_snapshots=snapshots, support_snapshot_complete=False)
+            self.assertEqual([(item["claim_key"], item["change_type"]) for item in changes], [("company.phone", "removed")])
+            self.assertEqual(store.apply("923609016", [], [], "t3", source_snapshots=snapshots, support_snapshot_complete=False), [])
+            recovered = snapshots[:1] + [{"source_url": snapshots[1]["source_url"], "status": 200}]
+            changes = store.apply("923609016", [], [], "t4", source_snapshots=recovered, support_snapshot_complete=True)
+            self.assertEqual({item["claim_key"] for item in changes}, {"people.official_role:chair", "official.support_award:one"})
+            store.close()
+
     def test_idempotent_and_tracks_add_update_remove(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd() / "tests") as directory:
             store = StateStore(Path(directory) / "state.sqlite3")

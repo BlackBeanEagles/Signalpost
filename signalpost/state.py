@@ -42,7 +42,7 @@ class StateStore:
         self.connection = sqlite3.connect(path)
         self.connection.executescript(SCHEMA)
 
-    def apply(self, orgnr: str, claims: list[dict[str, Any]], evidence: list[dict[str, Any]], observed_at: str) -> list[dict[str, Any]]:
+    def apply(self, orgnr: str, claims: list[dict[str, Any]], evidence: list[dict[str, Any]], observed_at: str, *, source_snapshots: list[dict[str, Any]] | None = None, support_snapshot_complete: bool = False) -> list[dict[str, Any]]:
         changes = []
         seen_before = self.connection.execute("SELECT 1 FROM entities WHERE organisation_number=?", (orgnr,)).fetchone() is not None
         previous_rows = self.connection.execute(
@@ -84,9 +84,28 @@ class StateStore:
                 (orgnr, key, value_json, evidence_id, observed_at),
             )
         current_keys = {claim["key"] for claim in claims if claim.get("availability") == "available"}
+        successful_urls = {str(item.get("source_url") or "") for item in (source_snapshots or []) if item.get("status") == 200}
+
+        def removal_is_supported(key: str) -> bool:
+            if source_snapshots is None:
+                return True  # Preserve the direct StateStore API for callers without source status.
+            field = key.split(":", 1)[0]
+            if field == "official.support_award":
+                return support_snapshot_complete
+            if field == "people.official_role":
+                return any(url.endswith("/roller") for url in successful_urls)
+            if field == "locations.registered_workplace":
+                return any("/underenheter?" in url for url in successful_urls)
+            if field == "company.group_structure":
+                return any("/konsernstruktur/" in url for url in successful_urls)
+            if field.startswith("company."):
+                return any(url.endswith(f"/enheter/{orgnr}") or url.endswith("/enheter/lastned/csv") for url in successful_urls)
+            # Financial history and bounded website crawls do not prove deletion.
+            return False
+
         if seen_before:
             for key, previous in previous_by_key.items():
-                if key not in current_keys:
+                if key not in current_keys and removal_is_supported(key):
                     changes.append({"claim_key": key, "change_type": "removed", "previous_value": json.loads(previous[0]), "current_value": None, "previous_evidence_id": previous[1], "current_evidence_id": None, "previous_observed_at": previous[2], "observed_at": observed_at})
                     self.connection.execute("DELETE FROM claims WHERE organisation_number=? AND claim_key=?", (orgnr, key))
         self.connection.execute(

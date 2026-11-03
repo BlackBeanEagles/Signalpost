@@ -200,6 +200,13 @@ class WebsiteTests(unittest.TestCase):
         self.assertEqual([c["value"] for c in result.claims if c["field"] == "website.official"], ["https://example-company.no"])
         self.assertLessEqual(len(client.calls), 3)
 
+    def test_large_batch_can_bound_unlisted_domain_discovery(self):
+        registry = {"navn": "Example Company AS"}
+        client = FakeClient({})
+        result = crawl_verified_website("123456789", registry, client, max_pages=4, max_discovery_candidates=1)
+        self.assertEqual(client.calls, ["https://examplecompany.no"])
+        self.assertFalse(result.claims)
+
     def test_exact_org_number_verifies_identity(self):
         ok, _ = _verified("EQUINOR ASA org.nr. 923 609 016", "923609016", {"navn": "EQUINOR ASA"}, heading="EQUINOR ASA")
         self.assertTrue(ok)

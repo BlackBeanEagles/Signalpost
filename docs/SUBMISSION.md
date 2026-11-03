@@ -16,7 +16,7 @@
 ## Evaluator command
 
 ```bash
-python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-enheter.csv.gz --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
+python -m signalpost run --organisations evaluator-companies.jsonl --output out/envelopes.jsonl --report out/run-report.json --state state/signalpost.sqlite3 --run-id official-001 --workers 24
 ```
 
 ## Declared services and licences
@@ -25,7 +25,8 @@ python -m signalpost run --organisations evaluator-companies.jsonl --bulk brreg-
 - Norwegian Licence for Open Government Data (NLOD) 2.0
 - No model, paid API, personal credential, external cache or restricted-platform scraper
 - Expected third-party cost per official run: $0
-- Expected request count: one bounded shared support-snapshot request, run concurrently with budget-adaptive official/company-owned modules. The default 17,000-request ceiling is sized to retain the high-value role, location, group and verified-website modules plus up to two bounded exact-identity website discovery candidates on the current 1,500-company official batch; `--max-requests` can be lowered to match an evaluator-supplied ceiling.
+- Install step from a clean checkout: `python -m pip install .`. No personal credentials or runtime packages are required.
+- Expected request count: one bounded shared support-snapshot request, run concurrently with budget-adaptive official/company-owned modules. The default 17,000-request ceiling leaves headroom for the current 1,000-company batch and can be lowered to match an evaluator-supplied ceiling. Use optional `--bulk PATH` only when Builderr supplies that snapshot.
 
 ## Smoke result
 
@@ -41,5 +42,5 @@ Contact details: use the registration email and participant name from the Unstop
 
 Send the repository URL, exact commit hash, evaluator command, API/licence declaration, expected cost and contact details to `submit@builderr.ai`. Register the project link on Unstop separately.
 
-The organiser's latest direct email confirms the recorded submission at commit `5445c95` (version 2 of 5) and asks for audit fixes before 7 November. Send the new exact commit URL when the updated revision is ready; the published score is still pending its fresh-company rerun.
+The organiser's 2 November feedback reports 274 of 300 companies reached on a previous run, with nine checked facts right and none wrong; the final score remains pending. Send the latest exact commit URL when updating the submission. Builderr allows five submitted versions in total through 7 November; repository commits alone do not establish which version is recorded for the next run.
 
