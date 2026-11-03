@@ -116,6 +116,11 @@ class WebsiteTests(unittest.TestCase):
         result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home}), max_pages=1)
         self.assertEqual([c["value"] for c in result.claims if c["field"] == "public.social_profile"], ["https://www.instagram.com/examplecompany"])
 
+    def test_footer_social_accepts_exact_legal_name_with_as_suffix(self):
+        home = '<h1>Example Company AS</h1><footer><a href="https://www.linkedin.com/company/example-company-as/">LinkedIn</a><a href="https://www.linkedin.com/company/example-company-group/">Group</a></footer>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home}), max_pages=1)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "public.social_profile"], ["https://www.linkedin.com/company/example-company-as"])
+
     def test_dated_generic_article_on_company_press_page_is_news(self):
         home = '<h1>Example Company AS</h1><footer>Org nr 123 456 789</footer><a href="/press">Press</a>'
         listing = '<a href="/pressemelding-project/">Example Company announces a new project</a>'
@@ -135,6 +140,26 @@ class WebsiteTests(unittest.TestCase):
         document = '<script type="application/ld+json">{"@type":"Article","headline":"Example Company launches widget","mainEntityOfPage":{"@id":"https://example.no/products/widget"},"datePublished":"2026-10-01"}</script><div class="entry-content">Example Company AS sells a widget.</div>'
         fetch = Fetch("https://example.no/products/widget", 200, document, document.encode(), "2026-10-15T00:00:00Z")
         self.assertFalse([c for c in _structured_claims(fetch, "ev-1", "123456789", REGISTRY, "https://example.no") if c["field"] == "public.activity_item"])
+
+    def test_dated_blog_product_guide_is_not_company_news(self):
+        url = "https://example.no/blogs/nyheter/granitt-kantstein-i-hagen"
+        document = f'<script type="application/ld+json">{{"@type":"Article","headline":"Granitt kantstein: slik bruker du naturstein i hagen","mainEntityOfPage":{{"@id":"{url}"}},"datePublished":"2026-10-01"}}</script><article><h1>Granitt kantstein: slik bruker du naturstein i hagen</h1><p>Hos Example Company AS finner du kantstein.</p></article>'
+        fetch = Fetch(url, 200, document, document.encode(), "2026-10-15T00:00:00Z")
+        self.assertFalse([c for c in _structured_claims(fetch, "ev-1", "123456789", REGISTRY, "https://example.no", True) if c["field"] == "public.activity_item"])
+
+    def test_homepage_news_cards_prioritize_company_event_over_generic_articles(self):
+        home = '<h1>Example Company AS</h1><footer>Org nr 123 456 789</footer><a class="post-card" href="/generic-a/">How to choose a widget</a><a class="post-card" href="/generic-b/">Widget guide for beginners</a><a class="post-card" href="/example-company-partnership/">Example Company signs a partnership</a>'
+        article = '<script type="application/ld+json">{"@type":"Article","headline":"Example Company signs a partnership","url":"https://example.no/example-company-partnership/","datePublished":"2026-10-01"}</script><article><h1>Example Company signs a partnership</h1><p>Example Company AS signed a partnership in Oslo.</p></article>'
+        client = FakeClient({"https://example.no": home, "https://example.no/example-company-partnership/": article})
+        result = crawl_verified_website("123456789", REGISTRY, client, max_pages=2)
+        self.assertEqual([c["value"]["url"] for c in result.claims if c["field"] == "public.activity_item"], ["https://example.no/example-company-partnership/"])
+        self.assertNotIn("https://example.no/generic-a/", client.calls)
+
+    def test_verified_homepage_careers_link_is_fetched_and_published(self):
+        home = '<h1>Example Company AS</h1><a href="/careers">Careers at Example Company</a>'
+        careers = '<h1>Careers at Example Company AS</h1><p>Current openings are listed here.</p>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home, "https://example.no/careers": careers}), max_pages=2)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "hiring.careers_page"], ["https://example.no/careers"])
 
     def test_dated_html_news_article_with_company_name_is_published(self):
         home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'

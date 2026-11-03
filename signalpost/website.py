@@ -252,7 +252,14 @@ def _company_social_account(url: str, registry: dict[str, Any]) -> bool:
     account = parsed.path.rstrip("/").rsplit("/", 1)[-1].lstrip("@")
     slug = re.sub(r"[^a-z0-9]", "", _ascii(account))
     name_tokens = _tokens(registry.get("navn"))
-    return bool(any(len(word) >= 4 for word in name_tokens) and slug == "".join(name_tokens))
+    if not any(len(word) >= 4 for word in name_tokens):
+        return False
+    stem = "".join(name_tokens)
+    accepted = {stem}
+    legal_suffix = re.search(r"\b(as|asa)\s*$", _ascii(registry.get("navn")))
+    if legal_suffix:
+        accepted.add(stem + legal_suffix.group(1))
+    return slug in accepted
 
 
 def _canonical_social_url(url: str) -> str:
@@ -296,6 +303,16 @@ def _article_body(document: str) -> str:
     return " ".join(cleaned)[:50000]
 
 
+def _company_news_title(title: str, url: str, registry: dict[str, Any]) -> bool:
+    folded = _ascii(title)
+    if re.search(r"\b(?:slik|hvordan|guide|tips|how to|when to)\b", folded):
+        return False
+    path = _ascii(urllib.parse.urlparse(url).path)
+    if re.search(r"pressemelding|press[- ]?release", folded + " " + path):
+        return True
+    return _name_match(title[:120], str(registry.get("navn") or ""))
+
+
 def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dict[str, Any], site: str, from_news_listing: bool = False) -> list[dict[str, Any]]:
     claims: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -333,7 +350,8 @@ def _structured_claims(fetch: Fetch, evidence_id: str, orgnr: str, registry: dic
             published = _published_date(node.get("datePublished"), fetch.retrieved_at)
             article_text = " ".join(str(node.get(key) or "") for key in ("articleBody", "description", "about"))
             about_company = _name_match(article_text + " " + _article_body(str(fetch.body or "")), str(registry.get("navn") or ""))
-            if headline and len(str(headline).strip()) >= 12 and url and published and (article_path_ok or from_news_listing) and _in_site_scope(absolute, site) and absolute.rstrip("/") == fetch.url.rstrip("/") and about_company:
+            news_type = bool(kinds & {"NewsArticle", "PressRelease"})
+            if headline and len(str(headline).strip()) >= 12 and url and published and (article_path_ok or from_news_listing) and _in_site_scope(absolute, site) and absolute.rstrip("/") == fetch.url.rstrip("/") and about_company and (news_type or _company_news_title(str(headline), absolute, registry)):
                 add("public.activity_item", {"title": str(headline)[:300], "url": absolute, "published_at": published})
         if "JobPosting" in kinds:
             title = node.get("title") or node.get("name")
@@ -350,7 +368,7 @@ def _html_article_claim(fetch: Fetch, page: PageParser, registry: dict[str, Any]
     content = PageParser(); content.feed(article.group(1))
     title = " ".join(content.headings or page.headings).strip()
     published = next((_published_date(value, fetch.retrieved_at) for value in content.published_dates + page.published_dates if _published_date(value, fetch.retrieved_at)), None)
-    if not published or len(title) < 12 or not _name_match(" ".join(content.text), str(registry.get("navn") or "")):
+    if not published or len(title) < 12 or not _name_match(" ".join(content.text), str(registry.get("navn") or "")) or not _company_news_title(title, fetch.url, registry):
         return None
     value = {"title": title[:300], "url": fetch.url, "published_at": published}
     identity = json.dumps(value, ensure_ascii=False, sort_keys=True)
@@ -450,7 +468,14 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
         news_listing_path = any(word in urllib.parse.urlparse(fetch.url).path.casefold() for word in ("news", "aktuelt", "nyheter", "blog", "press"))
         if not news_listing_path and not (fetch.url == first.url and page.news_links):
             continue
-        for href, label in [(href, "News article") for href in page.news_links] + page.links:
+        linked = list(page.links)
+        linked.extend((href, "News article") for href in page.news_links if not any(existing == href for existing, _ in linked))
+        def article_priority(link: tuple[str, str]) -> int:
+            href, label = link
+            path = urllib.parse.urlparse(urllib.parse.urljoin(fetch.url, href)).path
+            return 0 if _company_news_title(label, path, registry) else 1
+
+        for href, label in sorted(linked, key=article_priority):
             if attempts >= max_pages:
                 break
             parsed_article = urllib.parse.urlparse(urllib.parse.urljoin(fetch.url, href))

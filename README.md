@@ -54,17 +54,17 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in `smoke-300-v22` report and envelopes under `reports/` are a live 300-company run after the organiser's coverage feedback, using the tracked `data/smoke-organisations-300.jsonl` input:
+The checked-in `smoke-300-v23` report and envelopes under `reports/` are a live 300-company run after the organiser's coverage feedback, using the tracked `data/smoke-organisations-300.jsonl` input:
 
 - 300 inputs and 300 terminal outputs
 - 0 failed companies
-- 8,387 supported claims, including 16 verified company sites, four dated company news items, four exact-account social profiles and 10 recent official support awards
-- 1,553 evidence records from 1,823 requests
+- 8,377 supported claims, including 12 verified company sites, two dated company news items, three exact-account social profiles and 11 recent official support awards
+- 1,540 evidence records from 1,773 requests
 - $0 third-party API cost
-- 176.8 seconds wall time with 24 workers
+- 337.3 seconds wall time with 24 workers
 - Responsive viewer in `reports/signalpost.html`, with three-year financial summaries, source dates, search, feature filters, sorting and an empty-result message
 
-The full public-support CSV is 306 MB. SignalPost downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Absence from the bounded prefix does not mean a company has no awards. The 300 output envelopes passed the local contract audit. Builderr's official 300-company score is still pending; this different local sample is not that score.
+The full public-support CSV is 306 MB. SignalPost downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Absence from the bounded prefix does not mean a company has no awards. The 300 output envelopes passed the local contract audit. Website reachability varies between live runs; the stricter news gate excludes product guides even when they appear in a site's news section. Builderr's official score is still pending; this different local sample is not that score.
 
 Run the tests with:
 
@@ -72,7 +72,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 52 deterministic tests, including parent-site, redirect-scope, exact-social-account, dated-news, Norwegian-name discovery, large-batch discovery bounds, transient-registry and website recovery, support connection retry, partial-source refresh, and partial UTF-16 support-registry regression cases.
+The current suite contains 56 deterministic tests, including parent-site, redirect-scope, exact-social-account, company-event news, product-guide exclusion, careers discovery, Norwegian-name discovery, large-batch discovery bounds, transient-registry and website recovery, support connection retry, partial-source refresh, and partial UTF-16 support-registry regression cases.
 
 ## Source rights and operations
 

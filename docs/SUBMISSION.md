@@ -30,7 +30,7 @@ python -m signalpost run --organisations evaluator-companies.jsonl --output out/
 
 ## Smoke result
 
-`reports/smoke-300-v22-report.json` and `reports/smoke-300-v22-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,387 supported claims including 16 verified company sites, four dated news items, four exact-account social profiles and 10 recent official support awards, used 1,823 requests, cost $0, completed in 176.8 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
+`reports/smoke-300-v23-report.json` and `reports/smoke-300-v23-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,377 supported claims including 12 verified company sites, two dated news items, three exact-account social profiles and 11 recent official support awards, used 1,773 requests, cost $0, completed in 337.3 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
 
 ## External actions remaining
 
