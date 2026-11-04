@@ -126,7 +126,7 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
             request = urllib.request.Request(URL, headers={"User-Agent": "SignalPost/2.0"})
             try:
                 response_handle = urllib.request.urlopen(request, timeout=10)
-            except (urllib.error.URLError, TimeoutError):
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
                 if time.perf_counter() - started >= total_timeout - 10:
                     raise
                 budget.reserve()
@@ -138,7 +138,7 @@ def fetch_support_awards(targets: set[str], budget: Budget, directory: Path, loo
                         break
                     try:
                         chunk = response.read(1024 * 1024)
-                    except (TimeoutError, urllib.error.URLError):
+                    except (TimeoutError, urllib.error.URLError, ConnectionError):
                         partial_reason = "transfer_interrupted"
                         break
                     if not chunk:

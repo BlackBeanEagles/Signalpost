@@ -30,7 +30,9 @@ python -m signalpost run --organisations evaluator-companies.jsonl --output out/
 
 ## Smoke result
 
-`reports/smoke-300-v23-report.json` and `reports/smoke-300-v23-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,377 supported claims including 12 verified company sites, two dated news items, three exact-account social profiles and 11 recent official support awards, used 1,773 requests, cost $0, completed in 337.3 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
+`reports/smoke-300-v25-report.json` and `reports/smoke-300-v25-envelopes.jsonl` contain the post-feedback live 300-company run. It completed all 300 inputs, produced no failed envelopes, emitted 8,406 supported claims including 16 verified company sites, three dated news items, seven exact-account social profiles, two company careers pages and 11 recent official support awards, used 1,838 requests, cost $0, completed in 175.7 seconds, and passed the local contract audit. The support snapshot is explicitly partial after its 60-second deadline; unobserved awards remain unknown. These are local smoke metrics from a different sample, not Builderr's official score.
+
+`reports/coverage-1000-v27-report.json` and its envelopes contain a larger local run against `data/smoke-organisations-1000.jsonl`: 1,000/1,000 outputs, zero failed envelopes, 54 verified websites, 14 exact social profiles, five genuine careers pages and two dated company news items. It used 5,904 requests, cost $0 in external API fees, took 804.2 seconds, and passed the contract audit. The earlier local run on that same input had 38 websites, five social profiles and one careers page. Live reachability can vary; this is still not an official Builderr score.
 
 ## External actions remaining
 

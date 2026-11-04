@@ -33,7 +33,7 @@ For every valid organisation number the agent queries the official Norwegian reg
 - official registered workplaces/subunits.
 - recent Støtteregisteret awards found in a bounded shared download, with exact primary-recipient matching and explicit partial-snapshot status.
 
-When Builderr supplies a frozen bulk registry snapshot, pass it with the optional `--bulk PATH` argument to anchor identity without consuming outbound requests. The command above works with only the supplied company batch. The runner chooses the highest-value additional modules that fit the batch size and `--max-requests` budget. For batches of at least 500 companies it bounds website discovery to one exact-name `.no` candidate and four total website requests per company, so a growing batch remains tractable.
+When Builderr supplies a frozen bulk registry snapshot, pass it with the optional `--bulk PATH` argument to anchor identity without consuming outbound requests. The command above works with only the supplied company batch. The runner chooses the highest-value additional modules that fit the batch size and `--max-requests` budget. For batches of at least 500 companies it bounds website discovery to two name-based candidates and four total website requests per company, so a growing batch remains tractable.
 
 Claims include legal identity, industry, addresses, employees, contact details, business purpose, filing status, financial results across reporting periods, management and board roles, group relationships, and workplaces. Missing, blocked and failed modules are explicit; missing values are never changed to zero.
 
@@ -54,17 +54,19 @@ SQLite state stores immutable source snapshots, claim history and current values
 
 ## Smoke-test result
 
-The checked-in `smoke-300-v23` report and envelopes under `reports/` are a live 300-company run after the organiser's coverage feedback, using the tracked `data/smoke-organisations-300.jsonl` input:
+The checked-in `smoke-300-v25` report and envelopes under `reports/` are a live 300-company run after the organiser's coverage feedback, using the tracked `data/smoke-organisations-300.jsonl` input:
 
 - 300 inputs and 300 terminal outputs
 - 0 failed companies
-- 8,377 supported claims, including 12 verified company sites, two dated company news items, three exact-account social profiles and 11 recent official support awards
-- 1,540 evidence records from 1,773 requests
+- 8,406 supported claims, including 16 verified company sites, three dated company news items, seven exact-account social profiles, two company careers pages and 11 recent official support awards
+- 1,558 evidence records from 1,838 requests
 - $0 third-party API cost
-- 337.3 seconds wall time with 24 workers
+- 175.7 seconds wall time with 24 workers
 - Responsive viewer in `reports/signalpost.html`, with three-year financial summaries, source dates, search, feature filters, sorting and an empty-result message
 
 The full public-support CSV is 306 MB. SignalPost downloads it alongside company research for at most 60 seconds, parses only complete CSV rows, and labels the resulting snapshot `partial` when the deadline is reached. Absence from the bounded prefix does not mean a company has no awards. The 300 output envelopes passed the local contract audit. Website reachability varies between live runs; the stricter news gate excludes product guides even when they appear in a site's news section. Builderr's official score is still pending; this different local sample is not that score.
+
+The checked-in `coverage-1000-v27` report and envelopes use `data/smoke-organisations-1000.jsonl`. This larger local run completed 1,000/1,000 outputs with no failed envelopes and passed the contract audit. It verified 54 company websites, 14 exact-account social profiles, five company careers pages and two dated company news items in 5,904 requests over 804.2 seconds at $0 external API cost. The earlier run on this same input verified 38 websites, five social profiles and one careers page. These counts are observations from this sample, not a forecast of the official score.
 
 Run the tests with:
 
@@ -72,7 +74,7 @@ Run the tests with:
 python -m unittest discover -s tests -v
 ```
 
-The current suite contains 56 deterministic tests, including parent-site, redirect-scope, exact-social-account, company-event news, product-guide exclusion, careers discovery, Norwegian-name discovery, large-batch discovery bounds, transient-registry and website recovery, support connection retry, partial-source refresh, and partial UTF-16 support-registry regression cases.
+The current suite contains 62 deterministic tests, including parent-site, redirect-scope, exact-social-account, company-event news, product-guide exclusion, careers discovery and job-board exclusion, Norwegian-name discovery, large-batch discovery bounds, transient-registry and website recovery, remote-disconnect handling, support connection retry, partial-source refresh, and partial UTF-16 support-registry regression cases.
 
 ## Source rights and operations
 

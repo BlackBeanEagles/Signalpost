@@ -161,6 +161,27 @@ class WebsiteTests(unittest.TestCase):
         result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home, "https://example.no/careers": careers}), max_pages=2)
         self.assertEqual([c["value"] for c in result.claims if c["field"] == "hiring.careers_page"], ["https://example.no/careers"])
 
+    def test_javascript_homepage_can_find_company_career_path(self):
+        registry = {"navn": "Example Company ASA", "hjemmeside": "https://example.com"}
+        home = '<title>Example Company</title><h1>Example Company</h1>'
+        career = '<h1>Careers at Example Company</h1><p>Join our company.</p>'
+        client = FakeClient({"https://example.com": home, "https://example.com/career": career})
+        result = crawl_verified_website("123456789", registry, client, max_pages=5)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "hiring.careers_page"], ["https://example.com/career"])
+
+    def test_theatre_performances_are_not_careers(self):
+        home = '<h1>Example Company AS</h1><a href="/forestillinger/">Forestillinger</a><a href="/om-oss/ledige-stillinger/">Ledige stillinger</a>'
+        pages = {"https://example.no": home, "https://example.no/forestillinger/": '<h1>Forestillinger</h1>',
+                 "https://example.no/om-oss/ledige-stillinger/": '<h1>Ledige stillinger</h1>'}
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient(pages), max_pages=3)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "hiring.careers_page"], ["https://example.no/om-oss/ledige-stillinger/"])
+
+    def test_third_party_job_ad_board_is_not_company_careers(self):
+        home = '<h1>Example Company AS</h1><a href="/career">Karriere</a>'
+        board = '<h1>Jobbannonser</h1><p>Vil din bedrift annonsere her?</p>'
+        result = crawl_verified_website("123456789", REGISTRY, FakeClient({"https://example.no": home, "https://example.no/career": board}), max_pages=2)
+        self.assertFalse([c for c in result.claims if c["field"] == "hiring.careers_page"])
+
     def test_dated_html_news_article_with_company_name_is_published(self):
         home = '<title>Example Company AS</title><h1>Example Company AS</h1><p>Org nr 123 456 789</p><a href="/news">News</a>'
         listing = '<a href="/news/contract">Example Company signs a new contract</a>'
@@ -257,7 +278,14 @@ class WebsiteTests(unittest.TestCase):
 
     def test_missing_registry_site_gets_one_deterministic_discovery_candidate(self):
         self.assertEqual(_candidate_homepages({"navn": "Norsk Eksempel AS"}), ["https://norskeksempel.no", "https://norsk-eksempel.no", "https://norskeksempel.com"])
-        self.assertEqual(_candidate_homepages({"navn": "Example AS", "hjemmeside": "example.no"}), ["https://example.no"])
+        self.assertEqual(_candidate_homepages({"navn": "Example AS", "hjemmeside": "example.no"}), ["https://example.no", "https://www.example.no"])
+
+    def test_registry_www_variant_recovers_unreachable_registered_hostname(self):
+        registry = {"navn": "Example Company AS", "hjemmeside": "www.example.no"}
+        client = FakeClient({"https://example.no": '<h1>Example Company AS</h1><footer>Org nr 123 456 789</footer>'})
+        result = crawl_verified_website("123456789", registry, client, max_pages=2)
+        self.assertEqual([c["value"] for c in result.claims if c["field"] == "website.official"], ["https://example.no"])
+        self.assertEqual(client.calls[:2], ["https://www.example.no", "https://example.no"])
 
     def test_wrong_first_discovery_candidate_does_not_block_exact_second_site(self):
         registry = {"navn": "Example Company AS"}

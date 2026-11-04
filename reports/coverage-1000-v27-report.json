@@ -1,0 +1,43 @@
+{
+  "run_id": "coverage-1000-v27",
+  "started_at": "2026-11-03T21:51:16Z",
+  "completed_at": "2026-11-03T22:04:41Z",
+  "input_count": 1000,
+  "output_count": 1000,
+  "unique_output_count": 1000,
+  "available": 1000,
+  "failed": 0,
+  "total_claims": 29321,
+  "available_claims": 26336,
+  "evidence_records": 5168,
+  "changes": 0,
+  "requests": 5904,
+  "third_party_cost_usd": 0.0,
+  "wall_runtime_ms": 804245,
+  "company_runtime_p50_ms": 16895,
+  "company_runtime_p95_ms": 38331,
+  "complete": true,
+  "bulk_registry_snapshot": null,
+  "enabled_modules": [
+    "financials",
+    "group",
+    "locations",
+    "registry",
+    "roles",
+    "website"
+  ],
+  "website_page_budget_per_company": 4,
+  "website_discovery_candidates_per_company": 2,
+  "support_registry": {
+    "status": "partial",
+    "source_url": "https://stotte.brreg.no/nb/oppslag/stoettetildeling/totalbestand/csv",
+    "retrieved_at": "2026-11-03T21:51:16Z",
+    "snapshot_sha256": "93068672cfd0b34637aad970f20d20386fa62063c8b8731cd4752ffda61d35c1",
+    "bytes": 29359274,
+    "companies": 39,
+    "claims": 39,
+    "complete_snapshot": false,
+    "partial_reason": "transfer_deadline",
+    "runtime_ms": 61017
+  }
+}

@@ -12,7 +12,8 @@ from .identity import is_valid_orgnr
 from .sources import Fetch, HttpClient
 
 
-KEYWORDS = ("contact", "kontakt", "about", "om-oss", "careers", "karriere", "jobb", "jobs", "news", "aktuelt", "nyheter", "blog", "press")
+CAREER_TERMS = ("career", "careers", "karriere", "jobb", "jobber", "jobs", "stillinger", "rekruttering")
+KEYWORDS = ("contact", "kontakt", "about", "om-oss", "news", "aktuelt", "nyheter", "blog", "press")
 SOCIAL_HOSTS = {"linkedin.com", "www.linkedin.com", "facebook.com", "www.facebook.com", "instagram.com", "www.instagram.com", "youtube.com", "www.youtube.com"}
 COMMON_PATHS = ("/kontakt", "/contact", "/om-oss", "/about", "/karriere", "/careers", "/jobb", "/jobs", "/aktuelt", "/nyheter", "/news")
 
@@ -117,9 +118,21 @@ def _candidate_homepages(registry: dict[str, Any]) -> list[str]:
     supplied = str(registry.get("hjemmeside") or "").strip()
     if supplied:
         candidate = supplied if "://" in supplied else "https://" + supplied
-        if (urllib.parse.urlparse(candidate).hostname or "").casefold() in SOCIAL_HOSTS:
+        parsed = urllib.parse.urlparse(candidate)
+        host = (parsed.hostname or "").casefold()
+        if host in SOCIAL_HOSTS:
             return []
-        return [candidate]
+        candidates = [candidate]
+        parts = host.split(".")
+        if parsed.port is None and len(parts) == 2:
+            alternate = "www." + host
+        elif parsed.port is None and len(parts) == 3 and parts[0] == "www":
+            alternate = host[4:]
+        else:
+            alternate = None
+        if alternate:
+            candidates.append(urllib.parse.urlunparse(parsed._replace(netloc=alternate)))
+        return candidates
     tokens = _tokens(registry.get("navn"))
     compact = "".join(tokens)
     hyphenated = "-".join(tokens)
@@ -138,6 +151,24 @@ def _name_match(text: str, name: str) -> bool:
     expected = _tokens(name)
     actual = set(_tokens(text))
     return bool(expected) and sum(len(word) for word in expected if word in actual) / sum(map(len, expected)) >= 0.75
+
+
+def _career_path(url: str) -> bool:
+    path = _ascii(urllib.parse.urlparse(url).path)
+    return bool(re.search(r"(?:^|[/_-])(?:" + "|".join(CAREER_TERMS) + r")(?:$|[/_-])", path))
+
+
+def _career_label(label: str) -> bool:
+    return bool(re.search(r"\b(?:" + "|".join(CAREER_TERMS) + r")\b", _ascii(label)))
+
+
+def _company_careers_page(url: str, page: PageParser) -> bool:
+    if not _career_path(url):
+        return False
+    heading = _ascii(" ".join(page.headings))
+    if re.search(r"\b(?:jobbannonser|stillingsannonser|job board|job ads)\b", heading):
+        return False
+    return True
 
 
 def _other_legal_name(heading: str, name: str) -> bool:
@@ -410,6 +441,8 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             homepage_has_org = orgnr in _site_numbers(" ".join(candidate_parser.text), orgnr)
             if not (_name_match(displayed, str(registry.get("navn") or "")) or homepage_has_org) or _other_legal_name(candidate_heading, str(registry.get("navn") or "")):
                 last_error = "ambiguous identity"
+                if registry.get("hjemmeside"):
+                    break
                 continue
             first = candidate
             parser = candidate_parser
@@ -431,7 +464,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     for href, label in parser.links:
         absolute = urllib.parse.urljoin(first.url, href)
         parsed = urllib.parse.urlparse(absolute)
-        if _in_site_scope(absolute, first.url) and any(word in (parsed.path + " " + label).casefold() for word in KEYWORDS):
+        if _in_site_scope(absolute, first.url) and (_career_path(absolute) or _career_label(label) or any(word in (parsed.path + " " + label).casefold() for word in KEYWORDS)):
             clean = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, "", "", ""))
             if clean not in candidates:
                 candidates.append(clean)
@@ -439,7 +472,14 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
     # JavaScript. Probe a bounded set of conventional same-origin paths; publication still
     # requires the exact-entity gate below and a successful page response.
     common_path_limit = max(0, max_pages - (2 if parser.news_links else 1))
-    for path in COMMON_PATHS:
+    # Some official sites render their navigation only in JavaScript. Probe a
+    # couple of conventional careers paths when the fetched HTML has no links.
+    host = (urllib.parse.urlparse(first.url).hostname or "").casefold()
+    if not parser.links:
+        common_paths = ("/karriere", "/ledige-stillinger", "/nyheter", "/kontakt") if host.endswith(".no") else ("/career", "/careers", "/news", "/contact")
+    else:
+        common_paths = COMMON_PATHS
+    for path in common_paths:
         if len(candidates) >= common_path_limit:
             break
         guessed = urllib.parse.urljoin(first.url.rstrip("/") + "/", path.lstrip("/"))
@@ -447,8 +487,10 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             candidates.append(guessed)
     def priority(url: str) -> int:
         value = urllib.parse.urlparse(url).path.casefold()
-        groups = (("career", "karriere", "jobb", "jobs"), ("news", "aktuelt", "nyheter", "blog", "press"), ("contact", "kontakt"), ("about", "om-oss"))
-        return next((index for index, words in enumerate(groups) if any(word in value for word in words)), len(groups))
+        if _career_path(url):
+            return 0
+        groups = (("news", "aktuelt", "nyheter", "blog", "press"), ("contact", "kontakt"), ("about", "om-oss"))
+        return next((index + 1 for index, words in enumerate(groups) if any(word in value for word in words)), len(groups) + 1)
     for url in sorted(candidates, key=priority)[: max(0, min(2, max_pages - 1))]:
         fetch = fetch_page(url)
         if fetch is None:
@@ -527,7 +569,7 @@ def crawl_verified_website(orgnr: str, registry: dict[str, Any], client: HttpCli
             if _company_social_account(absolute, registry):
                 account_url = _canonical_social_url(absolute)
                 result.claims.append({"key": f"public.social_profile:{hashlib.sha256(account_url.encode()).hexdigest()[:12]}", "field": "public.social_profile", "value": account_url, "availability": "available", "confidence": 0.95, "evidence_ids": [ev["id"]]})
-        if any(word in path for word in ("career", "karriere", "jobb", "jobs")):
+        if _company_careers_page(fetch.url, page):
             result.claims.append({"key": f"hiring.careers_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "hiring.careers_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})
         if any(word in path for word in ("news", "aktuelt", "nyheter", "blog", "press")):
             result.claims.append({"key": f"public.activity_page:{hashlib.sha256(fetch.url.encode()).hexdigest()[:12]}", "field": "public.activity_page", "value": fetch.url, "availability": "available", "confidence": 0.98, "evidence_ids": [ev["id"]]})

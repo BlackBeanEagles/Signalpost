@@ -68,7 +68,7 @@ class HttpClient:
                 last = Fetch(url, exc.code, None, b"", stamp, f"HTTP {exc.code}")
                 if exc.code not in {429, 500, 502, 503, 504}:
                     return last
-            except (urllib.error.URLError, socket.timeout, TimeoutError, json.JSONDecodeError) as exc:
+            except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, json.JSONDecodeError) as exc:
                 last = Fetch(url, 0, None, b"", stamp, type(exc).__name__)
             if attempt < retries:
                 time.sleep(0.2 * (2 ** attempt))
@@ -95,7 +95,7 @@ class HttpClient:
                 return Fetch(response.geturl(), response.status, raw.decode(charset, errors="replace"), raw, stamp)
         except urllib.error.HTTPError as exc:
             return Fetch(url, exc.code, None, b"", stamp, f"HTTP {exc.code}")
-        except (urllib.error.URLError, socket.timeout, TimeoutError, ValueError) as exc:
+        except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError, ValueError) as exc:
             return Fetch(url, 0, None, b"", stamp, type(exc).__name__)
 
 

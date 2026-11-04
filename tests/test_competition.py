@@ -40,7 +40,7 @@ class CompetitionTests(unittest.TestCase):
                 report = run_official_batch(input_path, root / "output.jsonl", root / "report.json", root / "state.sqlite3", "retry-site", workers=1, max_requests=100)
             output = json.loads((root / "output.jsonl").read_text(encoding="utf-8"))
             self.assertEqual(retry.call_count, 1)
-            self.assertEqual(retry.call_args.kwargs["max_pages"], report["website_page_budget_per_company"] - 1)
+            self.assertEqual(retry.call_args.kwargs["max_pages"], report["website_page_budget_per_company"] - 2)
             self.assertEqual(report["failed"], 0)
             self.assertEqual([claim["value"] for claim in output["claims"] if claim["field"] == "website.official"], ["https://example.no"])
             self.assertFalse([error for error in output["errors"] if error.get("module") == "website"])

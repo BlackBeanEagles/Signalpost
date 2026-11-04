@@ -17,6 +17,9 @@ from .support import attach_support, fetch_support_awards
 from .website import crawl_verified_website
 
 
+TRANSIENT_NETWORK_ERRORS = {"URLError", "TimeoutError", "timeout", "gaierror", "RemoteDisconnected", "ConnectionResetError", "ConnectionAbortedError", "BrokenPipeError", "ConnectionRefusedError"}
+
+
 def read_inputs(path: Path) -> list[str]:
     text = path.read_text(encoding="utf-8-sig")
     if path.suffix.lower() == ".json":
@@ -90,7 +93,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
     # prefix concurrently so the support source does not serially delay the run.
     budget.reserve()
     enabled_modules, website_pages = plan_modules(len(inputs), max_requests, bulk_path is not None)
-    discovery_candidates = 1 if len(inputs) >= 500 else 3
+    discovery_candidates = 2 if len(inputs) >= 500 else 3
     indexed: dict[int, dict[str, Any]] = {}
     with ThreadPoolExecutor(max_workers=1) as support_executor:
         support_future = support_executor.submit(fetch_support_awards, set(inputs), budget, state_path.parent, budget_reserved=True)
@@ -117,7 +120,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
                     }
                 if len(indexed) % 100 == 0 or len(indexed) == len(inputs):
                     print(f"Processed {len(indexed)}/{len(inputs)} companies", file=sys.stderr, flush=True)
-        retry_indices = [index for index, row in indexed.items() if row["availability"] == "failed" and any(error.get("module") == "registry" and error.get("message") in {"URLError", "TimeoutError", "timeout"} for error in row.get("errors", []))]
+        retry_indices = [index for index, row in indexed.items() if row["availability"] == "failed" and any(error.get("module") == "registry" and error.get("message") in TRANSIENT_NETWORK_ERRORS for error in row.get("errors", []))]
         if retry_indices:
             print(f"Retrying {len(retry_indices)} transient registry failure(s)", file=sys.stderr, flush=True)
             with ThreadPoolExecutor(max_workers=min(4, len(retry_indices))) as retry_executor:
@@ -132,7 +135,7 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
         website_retry_indices = []
         for index in sorted(indexed):
             row = indexed[index]
-            if website_pages < 2 or row["availability"] != "available" or not any(error.get("module") == "website" and error.get("message") in {"gaierror", "URLError", "TimeoutError"} for error in row.get("errors", [])):
+            if website_pages < 3 or row["availability"] != "available" or not any(error.get("module") == "website" and error.get("message") in TRANSIENT_NETWORK_ERRORS for error in row.get("errors", [])):
                 continue
             if any(claim.get("field") == "company.website_candidate" and claim.get("availability") == "available" for claim in row["claims"]):
                 website_retry_indices.append(index)
@@ -144,9 +147,9 @@ def run_official_batch(input_path: Path, output_path: Path, report_path: Path, s
                 registry = {"navn": values["company.legal_name"], "hjemmeside": values["company.website_candidate"]}
                 company_client = HttpClient(budget)
                 started_retry = time.perf_counter()
-                # The first pass attempted only the registry-listed homepage.
+                # The first pass may try the registry host and its www variant.
                 # Spend at most the remaining per-company website page budget.
-                website = crawl_verified_website(row["organisation_number"], registry, company_client, max_pages=website_pages - 1, max_discovery_candidates=1)
+                website = crawl_verified_website(row["organisation_number"], registry, company_client, max_pages=website_pages - 2, max_discovery_candidates=1)
                 return index, website, company_client.requests, round((time.perf_counter() - started_retry) * 1000)
 
             recovered_count = 0
